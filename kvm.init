@@ -1,0 +1,401 @@
+#!/sbin/runscript
+
+# Filename: kvm.init
+# Autor: Michael Mair-Keimberger (m DOT mairkeimberger AT gmail DOT com)
+# Date: 13.08.2009
+
+# Copyright (C) 2011  Michael Mair-Keimberger
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
+# Discription:
+# start/stop script for qemu guests
+
+# programms
+SLEEP="/usr/bin/sleep"
+RM="/bin/rm"
+PS="/bin/ps"
+GREP="/bin/grep"
+BRCTL="/sbin/brctl"
+IP="/sbin/ip"
+NC="/usr/bin/nc"
+LS="/bin/ls"
+WC="/bin/wc"
+HEAD="/bin/head"
+EGREP="/bin/egrep"
+QEMU_BIN="/usr/bin/qemu-system-x86_64"
+NETSTAT="/bin/netstat"
+
+# PID dir
+PID_DIR="/var/run/kvm"
+# TMP dir
+TMP_DIR="/var/tmp"
+
+#
+# depend()
+# custom depends
+#
+depend(){
+  need net
+}
+
+#
+# scan_running_vm()
+# checks other vms
+#
+scan_running_vm(){
+  shopt -s nullglob
+  for running_vm in ${PID_DIR}/*.pid; do
+    running_vm_pid=`<${running_vm}`
+    if ( `${PS} -p ${running_vm_pid} -f --no-heading | ${GREP} "$1" > /dev/null 2>&1` ); then
+      match_vm=`echo ${running_vm%.pid}`
+      return 1
+    fi
+  done
+  shopt -u nullglob
+}
+
+#
+# cfgcheck()
+# make some configuration checks
+#
+cfgcheck(){
+  VM_NAME=${RC_SVCNAME#*.}
+  
+  # basic tests/settings
+  [ -d ${PID_DIR} ] || ${MKDIR} ${PID_DIR}
+  [ -d ${TMP_DIR} ] || TMP_DIR="/var/tmp"
+  if ! [ `${GREP} -i "^${VM_USER}" /etc/passwd` ]; then
+    ewarn "User \"${VM_USER}\" not found in /etc/passwd. Will start guest as \"root\""
+    VM_USER="root"
+  fi 
+
+  ! [ -z "${VM_MEMORY}" ] || VM_MEMORY="512"
+  ! [ -z "${VM_SMP}" ] || VM_SMP="2"
+  
+  if ! [ -z "${BRDEV}" ]; then
+    if ! ( ${IP} link show ${BRDEV} > /dev/null 2>&1 ); then
+      eerror "${BRDEV} dosen't exist. Please check your /etc/conf.d/kvm.${VM_NAME}"
+      return 1
+    fi
+  else
+    eerror "No Bridge device is set. Please check your /etc/conf.d/kvm.${VM_NAME}"
+  fi
+  
+  # remote access checks
+  if ( ${VM_HAVE_REOMTE_ACCESS} ); then
+    # set listening ip
+    if [ -z "${VM_REMOTE_ACCESS_LISTEN_IP}" ]; then
+      ip_address=`${IP} address show ${BRDEV}|${EGREP} -o '[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}'|${HEAD} -n1`
+      VM_REMOTE_ACCESS_LISTEN_IP="${ip_address}"
+    fi
+    # set port
+    ! [ -z "${VM_REMOTE_ACCESS_PORT}" ] || VM_REMOTE_ACCESS_PORT="580${startup_tap_id}"
+    # check port
+    if $(${NETSTAT} -nat | ${GREP} "${VM_REMOTE_ACCESS_LISTEN_IP}:${VM_REMOTE_ACCESS_PORT}[^0-9]      0.0.0.0:" >/dev/null); then
+      eerror "Port is already in use. Please choose an different one in /etc/conf.d/kvm.${VM_NAME}"
+      return 1
+    fi    
+  else
+    ewarn " Remote access disabled"
+    VM_DISPLAY=""
+  fi
+
+  # cdrom checks
+  if ! [ -z "${VM_CDROM}" ]; then
+    if ! [ -e "${VM_CDROM}" ]; then
+      eerror "CD-Image dosn't exist. Please check your config in /etc/conf.d/kvm.${VM_NAME}"
+      return 1
+    fi
+  fi
+
+  # image checks/default settings
+  if ( ${VM_HAVE_HARDDISK} ); then
+    if [ -z "${VM_IMAGE}" ]; then
+      eerror " No image set. Please check your /etc/conf.d/kvm.${VM_NAME}"
+      return 1
+    fi
+
+    if [ -d "${VM_IMAGE}" ]; then
+      if [ -e "${VM_IMAGE}/${VM_NAME}" ]; then
+	VM_IMAGE="${VM_IMAGE}/${VM_NAME}"
+      elif [ `${LS} ${VM_IMAGE}${VM_NAME}[.]* | ${WC} -l` -gt 1 ]; then
+	  eerror "More than one possible guest vm found. Please set the correct in /etc/conf.d/kvm.${VM_NAME}"
+	  return 1
+      else
+	VM_IMAGE=`${LS} ${VM_IMAGE}/${VM_NAME}[.]*`
+	ewarn " Image set to ${VM_IMAGE}"
+      fi
+    elif ! [ -e "${VM_IMAGE}" ]; then
+      eerror "Image not found. Please point to the right path/image of the vm in VM_IMAGE in /etc/conf.d/kvm.${VM_NAME}"
+      return 1
+    fi
+    # check if image is already running
+    if ! scan_running_vm "${VM_IMAGE}"; then
+      eerror "This image is already started by \"/etc/init.d/kvm.${match_vm##*/}\". Use another image!"
+      return 1
+    fi
+    # set default settings for hd if nothing is set
+    ! [ -z "${VM_IMG_CACHE}" ] || VM_IMG_CACHE="none"
+    ! [ -z "${VM_IMG_IF}" ] || VM_IMG_IF="ide"
+    ! [ -z "${VM_IMG_AIO}" ] || VM_IMG_AIO="threads"
+  fi
+
+  # network checks/default settings
+  if ( ${VM_HAVE_NET} ); then
+    if ! [ -z "${VM_MAC_ADDRESS}" ]; then
+      if ! scan_running_vm "${VM_MAC_ADDRESS}"; then
+	eerror "mac address already used by \"/etc/init.d/kvm.${match_vm##*/}\". Please change your mac address in /etc/conf.d/kvm.${VM_NAME}"
+	return 1
+      fi
+    else
+      # set random mac address
+      VM_MAC_ADDRESS=`printf 'DE:AD:CA:5E:%02X:%02X\n' $((RANDOM%256)) $((RANDOM%256))`
+      ewarn " ** RANDOM MAC ADDRESS! Address will get lost with shutdown! **"
+    fi
+    # set default network driver
+    ! [ -z "${VM_NET_DRV}" ] || VM_NET_DRV="rtl8139"
+  fi
+  
+  if ( ${VM_SNAPSHOTMODE} ); then
+    ewarn " ** SNAPSHOT MODE! Changes in the guest system won't be saved! **"
+  fi
+}
+
+#
+# myconfig()
+# function to generate the start config
+#
+myconfig(){
+  myconfig=""
+
+  # basic config
+  myconfig="-name ${VM_NAME} \
+  -runas ${VM_USER} \
+  -m ${VM_MEMORY} \
+  -smp ${VM_SMP} \
+  -monitor unix:${PID_DIR}/${VM_NAME}.sock,server,nowait \
+  -pidfile ${PID_DIR}/${VM_NAME}.pid \
+  -daemonize "
+  
+  # snapshotmode on/off
+  ( ${VM_SNAPSHOTMODE} ) && myconfig="${myconfig} -snapshot"
+  # spice virtual serial port (copy/paste)
+  ( ${VM_HAVE_VIRTSERIAL} ) && myconfig="${myconfig} -device virtio-serial \
+  -chardev spicevmc,id=vdagent,name=vdagent \
+  -device virtserialport,chardev=vdagent,name=com.redhat.spice.0"
+  # qemu guest agent (qga)
+  ( ${VM_HAVE_QGA} ) && myconfig="${myconfig} -device virtio-serial \
+  -chardev socket,path=${PID_DIR}/${VM_NAME}-qga.sock,server,nowait,id=${VM_NAME}-qga \
+  -device virtserialport,chardev=${VM_NAME}-qga,name=org.qemu.qga.0"
+  # enable/disable harddisk
+  ( ${VM_HAVE_HARDDISK} ) && myconfig="${myconfig} \
+  -drive file=${VM_IMAGE},if=${VM_IMG_IF},cache=${VM_IMG_CACHE},aio=${VM_IMG_AIO}"
+  # enable/disable network
+  ( ${VM_HAVE_NET} ) && myconfig="${myconfig} \
+  -netdev type=tap,id="${VM_NAME}_${startup_tap_id}",vhost=on,ifname=qtap${startup_tap_id},script=no,downscript=no \
+  -device ${VM_NET_DRV},netdev="${VM_NAME}_${startup_tap_id}",mac=${VM_MAC_ADDRESS}"
+  
+  if ( ${VM_HAVE_REOMTE_ACCESS} ); then
+    case ${VM_REMOTE_ACCESS} in
+      spice|SPICE)
+	VM_DISPLAY="qxl"
+	! [ -z "${VM_REMOTE_ACCESS_PW}" ] || VM_REMOTE_ACCESS_PW="\"\",disable-ticketing"
+	myconfig="${myconfig} -spice port=${VM_REMOTE_ACCESS_PORT},addr=${VM_REMOTE_ACCESS_LISTEN_IP},password=${VM_REMOTE_ACCESS_PW}"
+	;;
+      vnc|VNC)
+	myconfig="${myconfig} -vnc ${VM_REMOTE_ACCESS_LISTEN_IP}:${VM_REMOTE_ACCESS_PORT}"
+	;;
+      *)
+	ewarn " Unknow option. Remote access will be disabled"
+	myconfig="${myconfig} -nographic"
+	;;
+    esac
+  else
+    myconfig="${myconfig} -nographic"
+  fi
+
+  [ -z "${VM_LC}" ] || myconfig="${myconfig} -k ${VM_LC}"
+  [ -z "${VM_CPU}" ] || myconfig="${myconfig} -cpu ${VM_CPU}"
+  [ -z "${VM_USB}" ] || myconfig="${myconfig} -usb ${VM_USB}"
+  [ -z "${VM_DISPLAY}" ] || myconfig="${myconfig} -vga ${VM_DISPLAY}"
+  [ -z "${VM_AUDIO}" ] || myconfig="${myconfig} -soundhw ${VM_AUDIO}"
+  [ -z "${VM_OTHERS}" ] || myconfig="${myconfig} ${VM_OTHERS}"
+  [ -z "${VM_CDROM}" ] || myconfig="${myconfig} -cdrom ${VM_CDROM}"
+
+
+  if ! [ -z ${VM_BOOT_DEV} ]; then
+    case ${VM_BOOT_DEV} in 
+      floppy|a)
+	myconfig="${myconfig} -boot a"
+	;;
+      harddisk|c)
+	myconfig="${myconfig} -boot c"
+	;;
+      cdrom|d)
+	myconfig="${myconfig} -boot d"
+	;;
+      network|n)
+	myconfig="${myconfig} -boot n"
+	;;
+      *)
+	ewarn " Unknow boot option. Won't set any boot options"
+	;;
+    esac
+  fi
+
+}
+
+#
+# start_tap_device()
+# function to find out the tap id
+#
+start_tap_device(){
+  if ( ${VM_HAVE_NET} ); then
+    einfo "Setting up the tap interface: qtap$startup_tap_id"
+    ${IP} tuntap add dev qtap${startup_tap_id} mode tap user ${VM_USER} || return 1
+
+    einfo " Linking the bridge interface with qtap${startup_tap_id}"
+    ${BRCTL} addif ${BRDEV} qtap${startup_tap_id} || return 1
+
+    einfo " Bring qtap${startup_tap_id} interface up"
+    ${IP} link set dev qtap${startup_tap_id} up promisc on || return 1
+  fi
+}
+
+#
+# stop_tap_device()
+# function to find the vm's tap device and stop it
+#
+stop_tap_device(){
+  if ( ${VM_HAVE_NET} ); then
+    einfo "Bring qtap${stop_tap_id} interface down"
+    ${IP} link set dev qtap${stop_tap_id} down
+    eend $? "Failed to bring qtap${stop_tap_id} down"
+
+    einfo " Unlinking the bridge interface with qtap${stop_tap_id}"
+    ${BRCTL} delif ${BRDEV} qtap${stop_tap_id}
+    eend $? "Failed to unlink the bridge interface to qtap${stop_tap_id}"
+
+    ${SLEEP} 2
+    einfo " Removing the tap interface: qtap${stop_tap_id}"
+    ${IP} tuntap del qtap${stop_tap_id} mode tap
+    eend $? "Failed to remove the tap interface: qtap${stop_tap_id}"
+  fi
+}
+
+#
+# start()
+# starts the vm
+#
+start(){
+
+  VM_NAME=${RC_SVCNAME#*.}
+
+  # get the guest_nummber for vnc,mac,tap...
+  startup_tap_id=0;
+  while ( ${BRCTL} show | ${GREP} qtap${startup_tap_id} >/dev/null 2>&1 ); do
+    let "startup_tap_id += 1"
+  done
+
+  cfgcheck || return 1
+  myconfig || return 1
+  start_tap_device || return 1
+
+  ebegin "Start ${VM_NAME}"
+
+  # Start the Virtual Machine
+  TMPDIR="${TMP_DIR}" ${QEMU_BIN} ${myconfig} >/dev/null 2>&1
+
+  # remove tap devices if the guest system couldn't be started
+  if (( $? )); then
+    eerror "Failed to start ${VM_NAME}, shuting down qtap${startup_tap_id}"
+    stop_tap_id=${startup_tap_id};
+    stop_tap_device;
+    return 1
+  fi
+
+  eend $?
+}
+
+#
+# stop()
+# stopping the vm
+#
+stop(){
+
+  # set default kill wait to 80 seconds
+  if [ -z "${VM_KILL_WAIT}" ]; then
+    VM_KILL_WAIT=80
+  fi
+
+  VM_NAME=${RC_SVCNAME#*.}
+  KVM_PID=`<${PID_DIR}/${VM_NAME}.pid`
+  stop_tap_id=0
+
+  if ( ${PS} -p ${KVM_PID} --no-heading > /dev/null 2>&1 ); then
+
+    if ( ${VM_HAVE_NET} ); then
+      while ! ( ${PS} -p ${KVM_PID} -f --no-heading | ${GREP} qtap${stop_tap_id} >/dev/null ); do
+	let "stop_tap_id += 1"
+	# try qtap0 to qtap30 for possible 30 virtual maschines
+	if [ ${stop_tap_id} -eq 30 ]; then
+	  ewarn "Couldn't find a qtap device. Please check manually if a qtap device is leftover."
+	  break;
+	fi
+      done
+    fi
+
+    ebegin "Stopping ${VM_NAME}"
+    # sending via nc (netcat) the shutdown command
+    echo "system_powerdown" | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
+    # waiting for system to shutdown
+    
+    einfon "Waiting \"$((VM_KILL_WAIT))\" seconds for ${VM_NAME} to shutdown ."
+    for timer in `eval echo {1..$((VM_KILL_WAIT/2))}`; do
+      if [ -z "`${PS} -p ${KVM_PID} --no-heading`" ]; then
+	${RM} -rf ${PID_DIR}/${VM_NAME}.pid
+	${RM} -rf ${PID_DIR}/${VM_NAME}.sock
+	( ${VM_HAVE_QGA} ) && ${RM} -rf ${PID_DIR}/${VM_NAME}-qga.sock
+	echo
+	einfo " Stopped ${VM_NAME}"
+	break;
+      fi
+      ${SLEEP} 2
+      echo -n "."
+    done
+
+    # if the system couldn't be shutdown
+    if [ ${timer} -eq "$((VM_KILL_WAIT/2))" ]; then
+      echo
+      eerror "Shuddown of ${VM_NAME} failed, guest will be killed"
+      # kill qemu if term dosn't work
+      kill -9 ${KVM_PID} > /dev/null 2>&1
+      ${SLEEP} 2
+      ${RM} -rf ${PID_DIR}/${VM_NAME}.pid
+      ${RM} -rf ${PID_DIR}/${VM_NAME}.sock
+      ( ${VM_HAVE_QGA} ) && ${RM} -rf ${PID_DIR}/${VM_NAME}-qga.sock
+      ewarn " Killed ${VM_NAME}"
+    fi
+    
+    [ ${stop_tap_id} -eq 30 ] || stop_tap_device
+  
+  else
+    ewarn "Couldn't find the process for ${VM_NAME}, guest might already down"
+    eend 0
+  fi
+
+  eend $?
+}
