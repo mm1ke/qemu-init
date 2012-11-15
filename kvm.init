@@ -35,7 +35,6 @@ LS="/bin/ls"
 WC="/bin/wc"
 HEAD="/bin/head"
 EGREP="/bin/egrep"
-QEMU_BIN="/usr/bin/qemu-system-x86_64"
 NETSTAT="/bin/netstat"
 
 # PID dir
@@ -301,6 +300,17 @@ stop_tap_device(){
 # starts the vm
 #
 start(){
+  local qemu_bin
+
+  # Test if requested arch is available in qemu
+  # defaulting to system arch
+  [[ ! -n ${VM_ARCH} ]] && VM_ARCH=$(uname -m)
+  if [[ $(type -P qemu-system-${VM_ARCH} &>/dev/null) ]]; then
+    qemu_bin=$(type -P qemu-system-${VM_ARCH})
+  else
+    eerror "No support of ${VM_ARCH} in your qemu installation"
+    exit 1
+  fi
 
   VM_NAME=${RC_SVCNAME#*.}
 
@@ -317,7 +327,7 @@ start(){
   ebegin "Start ${VM_NAME}"
 
   # Start the Virtual Machine
-  TMPDIR="${TMP_DIR}" ${QEMU_BIN} ${myconfig} >/dev/null 2>&1
+  TMPDIR="${TMP_DIR}" ${qemu_bin} ${myconfig} >/dev/null 2>&1
 
   # remove tap devices if the guest system couldn't be started
   if (( $? )); then
