@@ -87,15 +87,6 @@ cfgcheck(){
   ! [ -z "${VM_MEMORY}" ] || VM_MEMORY="512"
   ! [ -z "${VM_SMP}" ] || VM_SMP="2"
   
-  if ! [ -z "${BRDEV}" ]; then
-    if ! ( ${IP} link show ${BRDEV} > /dev/null 2>&1 ); then
-      eerror "${BRDEV} dosen't exist. Please check your /etc/conf.d/kvm.${VM_NAME}"
-      return 1
-    fi
-  else
-    eerror "No Bridge device is set. Please check your /etc/conf.d/kvm.${VM_NAME}"
-  fi
-  
   # remote access checks
   if ( ${VM_HAVE_REOMTE_ACCESS} ); then
     # set listening ip
@@ -104,9 +95,15 @@ cfgcheck(){
       VM_REMOTE_ACCESS_LISTEN_IP="${ip_address}"
     fi
     # set port
-    ! [ -z "${VM_REMOTE_ACCESS_PORT}" ] || VM_REMOTE_ACCESS_PORT="580${startup_tap_id}"
-    # check port
-    if $(${NETSTAT} -nat | ${GREP} "${VM_REMOTE_ACCESS_LISTEN_IP}:${VM_REMOTE_ACCESS_PORT}[^0-9]      0.0.0.0:" >/dev/null); then
+    # i don't use scan_running_vm here because other programms can those ports to...
+    if [ -z "${VM_REMOTE_ACCESS_PORT}" ]; then
+      local port_nr=0
+      while $(${NETSTAT} -nat | ${GREP} "${VM_REMOTE_ACCESS_LISTEN_IP}:580${port_nr}[^0-9]" >/dev/null ); do
+	  let "port_nr += 1"
+      done
+      VM_REMOTE_ACCESS_PORT="580${port_nr}"
+    # check port if it was manuel set
+    elif $(${NETSTAT} -nat | ${GREP} "${VM_REMOTE_ACCESS_LISTEN_IP}:${VM_REMOTE_ACCESS_PORT}[^0-9]" >/dev/null); then
       eerror "Port is already in use. Please choose an different one in /etc/conf.d/kvm.${VM_NAME}"
       return 1
     fi    
@@ -156,7 +153,12 @@ cfgcheck(){
   fi
 
   # network checks/default settings
-  if ( ${VM_HAVE_NET} ); then
+  if [ -z "${VM_NET_TYP}" ]; then
+    VM_NET_TYP="none"
+  else
+    # set default network driver
+    [ -z "${VM_NET_DRV}" ] && VM_NET_DRV="rtl8139"
+    # check for mac address
     if ! [ -z "${VM_MAC_ADDRESS}" ]; then
       if ! scan_running_vm "${VM_MAC_ADDRESS}"; then
 	eerror "mac address already used by \"/etc/init.d/kvm.${match_vm##*/}\". Please change your mac address in /etc/conf.d/kvm.${VM_NAME}"
@@ -167,8 +169,32 @@ cfgcheck(){
       VM_MAC_ADDRESS=`printf 'DE:AD:CA:5E:%02X:%02X\n' $((RANDOM%256)) $((RANDOM%256))`
       ewarn " ** RANDOM MAC ADDRESS! Address will get lost with shutdown! **"
     fi
-    # set default network driver
-    ! [ -z "${VM_NET_DRV}" ] || VM_NET_DRV="rtl8139"
+
+    case ${VM_NET_TYP} in
+      bridge)
+	if [ -n "${BRDEV}" ]; then
+	  if ! ( ${IP} link show ${BRDEV} > /dev/null 2>&1 ); then
+	    eerror "${BRDEV} dosen't exist. Please check your /etc/conf.d/kvm.${VM_NAME}"
+	    return 1
+	  fi
+	else
+	  eerror "You need a bridge device! Please check your /etc/conf.d/kvm.${VM_NAME}"
+	  return 1
+	fi
+	# get the guest_nummber for qtap...
+	start_id=0;
+	while ( ${BRCTL} show | ${GREP} qtap${start_id} >/dev/null 2>&1 ); do
+	  let "start_id += 1"
+	done
+	;;
+      *)
+	if ! [ ${VM_NET_TYP} == "none" ]; then
+	  ewarn "** Unknow Network Topology. Network will be disabled"
+	  VM_NET_TYP="none"
+	fi
+	;;
+    esac
+
   fi
   
   if ( ${VM_SNAPSHOTMODE} ); then
@@ -205,10 +231,17 @@ myconfig(){
   # enable/disable harddisk
   ( ${VM_HAVE_HARDDISK} ) && myconfig="${myconfig} \
   -drive file=${VM_IMAGE},if=${VM_IMG_IF},cache=${VM_IMG_CACHE},aio=${VM_IMG_AIO}"
-  # enable/disable network
-  ( ${VM_HAVE_NET} ) && myconfig="${myconfig} \
-  -netdev type=tap,id="${VM_NAME}_${startup_tap_id}",vhost=on,ifname=qtap${startup_tap_id},script=no,downscript=no \
-  -device ${VM_NET_DRV},netdev="${VM_NAME}_${startup_tap_id}",mac=${VM_MAC_ADDRESS}"
+
+  # network settings
+  if ! [ ${VM_NET_TYP} == "none" ]; then
+    case ${VM_NET_TYP} in
+      bridge)
+	myconfig="${myconfig} \
+	-netdev type=tap,id="${VM_NAME}_${start_id}",vhost=on,ifname=qtap${start_id},script=no,downscript=no \
+	-device ${VM_NET_DRV},netdev="${VM_NAME}_${start_id}",mac=${VM_MAC_ADDRESS}"
+	;;
+    esac
+  fi
   
   if ( ${VM_HAVE_REOMTE_ACCESS} ); then
     case ${VM_REMOTE_ACCESS} in
@@ -265,16 +298,14 @@ myconfig(){
 # function to find out the tap id
 #
 start_tap_device(){
-  if ( ${VM_HAVE_NET} ); then
-    einfo "Setting up the tap interface: qtap$startup_tap_id"
-    ${IP} tuntap add dev qtap${startup_tap_id} mode tap user ${VM_USER} || return 1
+  einfo "Setting up the tap interface: qtap$start_id"
+  ${IP} tuntap add dev qtap${start_id} mode tap user ${VM_USER} || return 1
 
-    einfo " Linking the bridge interface with qtap${startup_tap_id}"
-    ${BRCTL} addif ${BRDEV} qtap${startup_tap_id} || return 1
+  einfo " Linking the bridge interface with qtap${start_id}"
+  ${BRCTL} addif ${BRDEV} qtap${start_id} || return 1
 
-    einfo " Bring qtap${startup_tap_id} interface up"
-    ${IP} link set dev qtap${startup_tap_id} up promisc on || return 1
-  fi
+  einfo " Bring qtap${start_id} interface up"
+  ${IP} link set dev qtap${start_id} up promisc on || return 1
 }
 
 #
@@ -282,20 +313,17 @@ start_tap_device(){
 # function to find the vm's tap device and stop it
 #
 stop_tap_device(){
-  if ( ${VM_HAVE_NET} ); then
-    einfo "Bring qtap${stop_tap_id} interface down"
-    ${IP} link set dev qtap${stop_tap_id} down
-    eend $? "Failed to bring qtap${stop_tap_id} down"
+  einfo "Bring qtap${stop_id} interface down"
+  ${IP} link set dev qtap${stop_id} down
+  eend $? "Failed to bring qtap${stop_id} down"
 
-    einfo " Unlinking the bridge interface with qtap${stop_tap_id}"
-    ${BRCTL} delif ${BRDEV} qtap${stop_tap_id}
-    eend $? "Failed to unlink the bridge interface to qtap${stop_tap_id}"
+  einfo " Unlinking the bridge interface with qtap${stop_id}"
+  ${BRCTL} delif ${BRDEV} qtap${stop_id}
+  eend $? "Failed to unlink the bridge interface to qtap${stop_id}"
 
-    ${SLEEP} 2
-    einfo " Removing the tap interface: qtap${stop_tap_id}"
-    ${IP} tuntap del qtap${stop_tap_id} mode tap
-    eend $? "Failed to remove the tap interface: qtap${stop_tap_id}"
-  fi
+  ${SLEEP} 2
+  einfo " Removing the tap interface: qtap${stop_id}"
+  ${IP} tuntap del qtap${stop_id} mode tap
 }
 
 #
@@ -317,15 +345,9 @@ start(){
 
   VM_NAME=${RC_SVCNAME#*.}
 
-  # get the guest_nummber for vnc,mac,tap...
-  startup_tap_id=0;
-  while ( ${BRCTL} show | ${GREP} qtap${startup_tap_id} >/dev/null 2>&1 ); do
-    let "startup_tap_id += 1"
-  done
-
   cfgcheck || return 1
   myconfig || return 1
-  start_tap_device || return 1
+  [ ${VM_NET_TYP} == "bridge" ] && start_tap_device
 
   ebegin "Start ${VM_NAME}"
 
@@ -335,9 +357,11 @@ start(){
 
   # remove tap devices if the guest system couldn't be started
   if (( $? )); then
-    eerror "Failed to start ${VM_NAME}, shuting down qtap${startup_tap_id}"
-    stop_tap_id=${startup_tap_id};
-    stop_tap_device;
+    if [ ${VM_NET_TYP} == "bridge" ]; then
+      eerror "Failed to start ${VM_NAME}, shuting down qtap${start_id}"
+      stop_id=${start_id}
+      stop_tap_device || return 1
+    fi
     return 1
   fi
 
@@ -357,15 +381,16 @@ stop(){
 
   VM_NAME=${RC_SVCNAME#*.}
   KVM_PID=`<${PID_DIR}/${VM_NAME}.pid`
-  stop_tap_id=0
 
   if ( ${PS} -p ${KVM_PID} --no-heading > /dev/null 2>&1 ); then
 
-    if ( ${VM_HAVE_NET} ); then
-      while ! ( ${PS} -p ${KVM_PID} -f --no-heading | ${GREP} qtap${stop_tap_id} >/dev/null ); do
-	let "stop_tap_id += 1"
+    # find the number of the qtap interface (in case it has a bridge network)
+    if [ ${VM_NET_TYP} == "bridge" ]; then
+      stop_id=0
+      while ! ( ${PS} -p ${KVM_PID} -f --no-heading | ${GREP} qtap${stop_id} >/dev/null ); do
+	let "stop_id += 1"
 	# try qtap0 to qtap30 for possible 30 virtual maschines
-	if [ ${stop_tap_id} -eq 30 ]; then
+	if [ ${stop_id} -eq 30 ]; then
 	  ewarn "Couldn't find a qtap device. Please check manually if a qtap device is leftover."
 	  break;
 	fi
@@ -403,8 +428,10 @@ stop(){
       ( ${VM_HAVE_QGA} ) && ${RM} -rf ${PID_DIR}/${VM_NAME}-qga.sock
       ewarn " Killed ${VM_NAME}"
     fi
-    
-    [ ${stop_tap_id} -eq 30 ] || stop_tap_device
+    # stop qtap device
+    if [ ${VM_NET_TYP} == "bridge" ]; then    
+      [ ${stop_id} -eq 30 ] || stop_tap_device
+    fi
   
   else
     ewarn "Couldn't find the process for ${VM_NAME}, guest might already down"
