@@ -379,7 +379,19 @@ start(){
 
   ebegin "Start ${VM_NAME}"
 
-  ((${DEBUG})) && einfo "* Startcommand: ${TMP_DIR} ${qemu_bin} ${myconfig}"
+  ((${DEBUG})) && echo -e "* Qemu settings:\n\t \
+    qemu-bin: ${qemu_bin}\n\t \
+    tmpdir: ${TMP_DIR}\n\t \
+    user: ${VM_USER}\n\t \
+    memory: ${VM_MEMORY} \n\t \
+    image: ${VM_IMAGE}\n\t \
+    network-typ: ${VM_NET_TYP}\n\t \
+    qtap-interface: qtap${start_id}\n\t \
+    remote-access-port: ${VM_REMOTE_ACCESS_PORT}\n\t \
+    remote-access-typ: ${VM_REMOTE_ACCESS}\n\t \
+    full config:\n\t \
+    ${myconfig}"
+
   # Start the Virtual Machine
   TMPDIR="${TMP_DIR}" ${qemu_bin} ${myconfig} >/dev/null 2>&1
 
