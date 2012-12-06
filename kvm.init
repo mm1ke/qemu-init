@@ -364,7 +364,7 @@ start(){
   # Test if requested arch is available in qemu
   # defaulting to system arch
   [[ ! -n ${VM_ARCH} ]] && VM_ARCH=$(uname -m)
-  if [[ $(type -P qemu-system-${VM_ARCH} &>/dev/null) ]]; then
+  if $(type -P qemu-system-${VM_ARCH} &>/dev/null); then
     qemu_bin=$(type -P qemu-system-${VM_ARCH})
   else
     eerror "No support of ${VM_ARCH} in your qemu installation"
