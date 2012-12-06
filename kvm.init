@@ -23,6 +23,12 @@
 # Discription:
 # start/stop script for qemu guests
 
+extra_commands="save tapdel"
+
+description="Start Qemu guests"
+description_save="Saves the changes from within a guest to the harddisk"
+description_tapdel="Deletes unused tap devices (like from a crashed guest)"
+
 # programms
 SLEEP="/usr/bin/sleep"
 RM="/bin/rm"
@@ -67,6 +73,28 @@ scan_running_vm(){
     fi
   done
   shopt -u nullglob
+}
+
+#
+# tapdel()
+# removes unused tap devices
+#
+tapdel(){
+  for active_qtap in `${BRCTL} show|${GREP} qtap`; do
+    if scan_running_vm "ifname=${active_qtap}"; then
+      stop_id=${active_qtap}
+      stop_tap_device
+    fi
+  done      
+}
+
+#
+# save()
+# save changes within a guest
+#
+save(){
+  VM_NAME=${RC_SVCNAME#*.}
+  #echo "commit" | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
 }
 
 #
