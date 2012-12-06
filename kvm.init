@@ -389,8 +389,7 @@ start(){
     qtap-interface: qtap${start_id}\n\t \
     remote-access-port: ${VM_REMOTE_ACCESS_PORT}\n\t \
     remote-access-typ: ${VM_REMOTE_ACCESS}\n\t \
-    full config:\n\t \
-    ${myconfig}"
+    full config: ${myconfig}"
 
   # Start the Virtual Machine
   TMPDIR="${TMP_DIR}" ${qemu_bin} ${myconfig} >/dev/null 2>&1
