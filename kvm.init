@@ -202,7 +202,7 @@ cfgcheck(){
     fi
 
     case ${VM_NET_TYP} in
-      bridge)
+      tap)
 	if [ -n "${BRDEV}" ]; then
 	  if ! ( ${IP} link show ${BRDEV} > /dev/null 2>&1 ); then
 	    eerror "${BRDEV} dosen't exist. Please check your /etc/conf.d/kvm.${VM_NAME}"
@@ -265,7 +265,7 @@ myconfig(){
 
   # network settings
   case ${VM_NET_TYP} in
-    bridge)
+    tap)
       myconfig="${myconfig} \
       -netdev type=tap,id="${VM_NAME}_${start_id}",vhost=on,ifname=qtap${start_id},script=no,downscript=no \
       -device ${VM_NET_DRV},netdev="${VM_NAME}_${start_id}",mac=${VM_MAC_ADDRESS}"
@@ -383,7 +383,7 @@ start(){
 
   cfgcheck || return 1
   myconfig || return 1
-  [ ${VM_NET_TYP} == "bridge" ] && start_tap_device
+  [ ${VM_NET_TYP} == "tap" ] && start_tap_device
 
   ebegin "Start ${VM_NAME}"
 
@@ -404,7 +404,7 @@ start(){
 
   # remove tap devices if the guest system couldn't be started
   if (( $? )); then
-    if [ ${VM_NET_TYP} == "bridge" ]; then
+    if [ ${VM_NET_TYP} == "tap" ]; then
       eerror "Failed to start ${VM_NAME}, shuting down qtap${start_id}"
       stop_id=${start_id}
       stop_tap_device || return 1
@@ -431,8 +431,8 @@ stop(){
 
   if ( ${PS} -p ${KVM_PID} --no-heading > /dev/null 2>&1 ); then
 
-    # find the number of the qtap interface (in case it has a bridge network)
-    if [ ${VM_NET_TYP} == "bridge" ]; then
+    # find the next free qtap interface
+    if [ ${VM_NET_TYP} == "tap" ]; then
       stop_id=0
       while ! ( ${PS} -p ${KVM_PID} -f --no-heading | ${GREP} qtap${stop_id} >/dev/null ); do
 	let "stop_id += 1"
@@ -476,7 +476,7 @@ stop(){
       ewarn " Killed ${VM_NAME}"
     fi
     # stop qtap device
-    if [ ${VM_NET_TYP} == "bridge" ]; then    
+    if [ ${VM_NET_TYP} == "tap" ]; then    
       [ ${stop_id} -eq 30 ] || stop_tap_device
     fi
   
