@@ -274,6 +274,7 @@ myconfig(){
       myconfig="${myconfig} \
       -netdev type=user,id=${VM_NAME}_${start_id} \
       -device ${VM_NET_DRV},netdev="${VM_NAME}_${start_id}",mac=${VM_MAC_ADDRESS}"
+      ;;
     none)
       myconfig="${myconfig} -net none"
       ;;
