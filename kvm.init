@@ -65,6 +65,8 @@ depend(){
 #
 scan_running_vm(){
   shopt -s nullglob
+  local running_vm
+  local running_vm_pid
   for running_vm in ${PID_DIR}/*.pid; do
     running_vm_pid=`<${running_vm}`
     if ( `${PS} -p ${running_vm_pid} -f --no-heading | ${GREP} "$1" > /dev/null 2>&1` ); then
@@ -80,6 +82,7 @@ scan_running_vm(){
 # removes unused tap devices
 #
 tapdel(){
+  local active_qtap
   for active_qtap in `${BRCTL} show|${GREP} qtap`; do
     if scan_running_vm "ifname=${active_qtap}"; then
       stop_id=${active_qtap}
