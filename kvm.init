@@ -85,7 +85,7 @@ tapdel(){
   local active_qtap
   for active_qtap in `${BRCTL} show|${GREP} qtap`; do
     if scan_running_vm "ifname=${active_qtap}"; then
-      stop_id=${active_qtap}
+      stop_id=${active_qtap:4}
       stop_tap_device
     fi
   done      
