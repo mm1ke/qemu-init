@@ -264,15 +264,17 @@ myconfig(){
   -drive file=${VM_IMAGE},if=${VM_IMG_IF},cache=${VM_IMG_CACHE},aio=${VM_IMG_AIO}"
 
   # network settings
-  if ! [ ${VM_NET_TYP} == "none" ]; then
-    case ${VM_NET_TYP} in
-      bridge)
-	myconfig="${myconfig} \
-	-netdev type=tap,id="${VM_NAME}_${start_id}",vhost=on,ifname=qtap${start_id},script=no,downscript=no \
-	-device ${VM_NET_DRV},netdev="${VM_NAME}_${start_id}",mac=${VM_MAC_ADDRESS}"
-	;;
-    esac
-  fi
+
+  case ${VM_NET_TYP} in
+    bridge)
+      myconfig="${myconfig} \
+      -netdev type=tap,id="${VM_NAME}_${start_id}",vhost=on,ifname=qtap${start_id},script=no,downscript=no \
+      -device ${VM_NET_DRV},netdev="${VM_NAME}_${start_id}",mac=${VM_MAC_ADDRESS}"
+      ;;
+    none)
+      myconfig="${myconfig} -net none"
+      ;;
+  esac
   
   if ( ${VM_HAVE_REOMTE_ACCESS} ); then
     case ${VM_REMOTE_ACCESS} in
