@@ -246,6 +246,7 @@ myconfig(){
   # if nothing is set, qemu defaults to 128mb memory and smp=1
   [ -z "${VM_MEMORY}" ] || myconfig="${myconfig} -m ${VM_MEMORY}"
   [ -z "${VM_SMP}" ] || myconfig="${myconfig} -smp ${VM_SMP}"
+  [ -z "${VM_MACHINE}" ] || myconfig="${myconfig} -machine ${VM_MACHINE}"
 
   # daemonize true/false
   ( ${VM_DAEMONIZE} ) && myconfig="${myconfig} -daemonize"
