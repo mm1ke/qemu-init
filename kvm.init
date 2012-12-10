@@ -114,9 +114,6 @@ cfgcheck(){
     ewarn "User \"${VM_USER}\" not found in /etc/passwd. Will start guest as \"root\""
     VM_USER="root"
   fi 
-
-  ! [ -z "${VM_MEMORY}" ] || VM_MEMORY="512"
-  ! [ -z "${VM_SMP}" ] || VM_SMP="2"
   
   # remote access checks
   if ( ${VM_HAVE_REOMTE_ACCESS} ); then
@@ -243,11 +240,13 @@ myconfig(){
   # basic config
   myconfig="-name ${VM_NAME} \
   -runas ${VM_USER} \
-  -m ${VM_MEMORY} \
-  -smp ${VM_SMP} \
   -monitor unix:${PID_DIR}/${VM_NAME}.sock,server,nowait \
   -pidfile ${PID_DIR}/${VM_NAME}.pid "
   
+  # if nothing is set, qemu defaults to 128mb memory and smp=1
+  [ -z "${VM_MEMORY}" ] || myconfig="${myconfig} -m ${VM_MEMORY}"
+  [ -z "${VM_SMP}" ] || myconfig="${myconfig} -smp ${VM_SMP}"
+
   # daemonize true/false
   ( ${VM_DAEMONIZE} ) && myconfig="${myconfig} -daemonize"
   # snapshotmode on/off
