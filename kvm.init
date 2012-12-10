@@ -113,7 +113,13 @@ cfgcheck(){
   if ! [ `${GREP} -i "^${VM_USER}" /etc/passwd` ]; then
     ewarn "User \"${VM_USER}\" not found in /etc/passwd. Will start guest as \"root\""
     VM_USER="root"
-  fi 
+  fi
+
+  if [ -n ${VM_KERNEL} ] && [ -n ${VM_INITRD} ]; then
+    VM_BOOT_DEV=""
+  else
+    VM_KERNEL=""
+  fi
   
   # remote access checks
   if ( ${VM_HAVE_REOMTE_ACCESS} ); then
@@ -247,6 +253,11 @@ myconfig(){
   [ -z "${VM_MEMORY}" ] || myconfig="${myconfig} -m ${VM_MEMORY}"
   [ -z "${VM_SMP}" ] || myconfig="${myconfig} -smp ${VM_SMP}"
   [ -z "${VM_MACHINE}" ] || myconfig="${myconfig} -machine ${VM_MACHINE}"
+
+  if [ -z "${VM_KERNEL}" ]; then
+    myconfig="${myconfig} -kernel ${VM_KERNEL} -initrd ${VM_INITRD}"
+    [ -z "${VM_APPEND}" ] || myconfig="${myconfig} -append ${VM_APPEND}"
+  fi
 
   # daemonize true/false
   ( ${VM_DAEMONIZE} ) && myconfig="${myconfig} -daemonize"
