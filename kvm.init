@@ -246,9 +246,10 @@ myconfig(){
   -m ${VM_MEMORY} \
   -smp ${VM_SMP} \
   -monitor unix:${PID_DIR}/${VM_NAME}.sock,server,nowait \
-  -pidfile ${PID_DIR}/${VM_NAME}.pid \
-  -daemonize "
+  -pidfile ${PID_DIR}/${VM_NAME}.pid "
   
+  # daemonize true/false
+  ( ${VM_DAEMONIZE} ) && myconfig="${myconfig} -daemonize"
   # snapshotmode on/off
   ( ${VM_SNAPSHOTMODE} ) && myconfig="${myconfig} -snapshot"
   # spice virtual serial port (copy/paste)
