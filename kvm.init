@@ -254,9 +254,9 @@ myconfig(){
   [ -z "${VM_SMP}" ] || myconfig="${myconfig} -smp ${VM_SMP}"
   [ -z "${VM_MACHINE}" ] || myconfig="${myconfig} -machine ${VM_MACHINE}"
 
-  if [ -z "${VM_KERNEL}" ]; then
+  if [ -n "${VM_KERNEL}" ]; then
     myconfig="${myconfig} -kernel ${VM_KERNEL} -initrd ${VM_INITRD}"
-    [ -z "${VM_APPEND}" ] || myconfig="${myconfig} -append ${VM_APPEND}"
+    [ -n "${VM_APPEND}" ] || myconfig="${myconfig} -append ${VM_APPEND}"
   fi
 
   # daemonize true/false
