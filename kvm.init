@@ -256,7 +256,7 @@ myconfig(){
 
   if [ -n "${VM_KERNEL}" ]; then
     myconfig="${myconfig} -kernel ${VM_KERNEL} -initrd ${VM_INITRD}"
-    [ -n "${VM_APPEND}" ] || myconfig="${myconfig} -append ${VM_APPEND}"
+    [ -z "${VM_APPEND}" ] || myconfig="${myconfig} -append ${VM_APPEND}"
   fi
 
   # daemonize true/false
