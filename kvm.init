@@ -120,6 +120,14 @@ cfgcheck(){
   else
     VM_KERNEL=""
   fi
+
+  # arch spezific configuration
+  case ${VM_ARCH} in
+    arm)
+      # arm has only smc91c111 - see qemu-system-arm -net nic,model=?
+      VM_NET_DRV="smc91c111"
+      ;;
+  esac
   
   # remote access checks
   if ( ${VM_HAVE_REOMTE_ACCESS} ); then
@@ -406,10 +414,16 @@ start(){
     user: ${VM_USER}\n\t \
     memory: ${VM_MEMORY} \n\t \
     image: ${VM_IMAGE}\n\t \
+    kernel: ${VM_KERNEL}\n\t \
+    kernel cmd: ${VM_APPEND}\n\t \
+    initrd: ${VM_INITRD}\n\t \
     network-typ: ${VM_NET_TYP}\n\t \
+    bridge device: ${BRDEV}\n\t \
     qtap-interface: qtap${start_id}\n\t \
     remote-access-port: ${VM_REMOTE_ACCESS_PORT}\n\t \
     remote-access-typ: ${VM_REMOTE_ACCESS}\n\t \
+    boot from: ${VM_BOOT_DEV}\n\t \
+    boot media: ${VM_CDROM}\n\t \
     full config: ${myconfig}"
 
   # Start the Virtual Machine
