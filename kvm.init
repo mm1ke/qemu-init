@@ -97,7 +97,7 @@ tapdel(){
 #
 save(){
   VM_NAME=${RC_SVCNAME#*.}
-  #echo "commit" | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
+  #echo "commit all" | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
 }
 
 #
