@@ -128,6 +128,12 @@ cfgcheck(){
       # arm has only smc91c111 - see qemu-system-arm -net nic,model=?
       VM_NET_DRV="smc91c111"
       ;;
+    mips)
+      # mips only supports up to 256mb ram
+      if [ ${VM_MEMORY} -gt 256 ]; then
+	VM_MEMORY=256
+	ewarn " ** MIPS only supports up to 256MB ram"
+      ;;
   esac
   
   # remote access checks
@@ -265,7 +271,7 @@ myconfig(){
 
   if [ -n "${VM_KERNEL}" ]; then
     myconfig="${myconfig} -kernel ${VM_KERNEL} -initrd ${VM_INITRD}"
-    [ -z "${VM_APPEND}" ] || myconfig="${myconfig} -append ${VM_APPEND}"
+    [ -z "${VM_APPEND}" ] || myconfig="${myconfig} -append \"${VM_APPEND}\""
   fi
 
   # daemonize true/false
