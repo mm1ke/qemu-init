@@ -210,7 +210,7 @@ cfgcheck(){
     else
       # set random mac address
       VM_MAC_ADDRESS=`printf 'DE:AD:CA:5E:%02X:%02X\n' $((RANDOM%256)) $((RANDOM%256))`
-      ewarn " ** RANDOM MAC ADDRESS! Address will get lost with shutdown! **"
+      ewarn " ** RANDOM MAC ADDRESS! Address will be lost on shutdown! **"
     fi
 
     case ${VM_NET_TYP} in
