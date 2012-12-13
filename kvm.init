@@ -97,6 +97,7 @@ tapdel(){
 #
 save(){
   VM_NAME=${RC_SVCNAME#*.}
+  ewarn "Command is disabled right now"
   #echo "commit all" | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
 }
 
