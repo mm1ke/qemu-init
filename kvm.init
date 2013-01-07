@@ -42,6 +42,7 @@ WC="/bin/wc"
 HEAD="/bin/head"
 EGREP="/bin/egrep"
 NETSTAT="/bin/netstat"
+CUT="/bin/cut"
 
 # PID dir
 PID_DIR="/var/run/kvm"
@@ -83,6 +84,9 @@ scan_running_vm(){
 #
 tapdel(){
   local active_qtap
+  if [ "$VM_NAME" == "init" ]; then
+    BRDEV=`${BRCTL} show|${CUT} -f 1|${GREP} -v bridge|${GREP} -v '^$'`
+  fi
   for active_qtap in `${BRCTL} show|${GREP} qtap`; do
     if scan_running_vm "ifname=${active_qtap}"; then
       stop_id=${active_qtap:4}
