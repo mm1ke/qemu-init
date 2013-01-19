@@ -137,8 +137,9 @@ cfgcheck(){
       if [ ${VM_MEMORY} -gt 256 ]; then
 	VM_MEMORY=256
 	ewarn " ** MIPS only supports up to 256MB ram"
+      fi
       ;;
-  esac
+    esac
   
   # remote access checks
   if ( ${VM_HAVE_REOMTE_ACCESS} ); then
