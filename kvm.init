@@ -469,7 +469,8 @@ stop(){
   KVM_PID=`<${PID_DIR}/${VM_NAME}.pid`
 
   if ( ${PS} -p ${KVM_PID} --no-heading > /dev/null 2>&1 ); then
-
+  
+    [ -z "${VM_NET_TYP}" ] && VM_NET_TYP="none"
     # find the next free qtap interface
     if [ ${VM_NET_TYP} == "tap" ]; then
       stop_id=0
