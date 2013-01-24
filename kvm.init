@@ -247,7 +247,6 @@ cfgcheck(){
 	fi
 	;;
     esac
-
   fi
   
   if ( ${VM_SNAPSHOTMODE} ); then
@@ -337,7 +336,6 @@ myconfig(){
   [ -z "${VM_OTHERS}" ] || myconfig="${myconfig} ${VM_OTHERS}"
   [ -z "${VM_CDROM}" ] || myconfig="${myconfig} -cdrom ${VM_CDROM}"
 
-
   if ! [ -z ${VM_BOOT_DEV} ]; then
     case ${VM_BOOT_DEV} in 
       floppy|a)
@@ -357,7 +355,6 @@ myconfig(){
 	;;
     esac
   fi
-
 }
 
 #
