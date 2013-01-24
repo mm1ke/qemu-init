@@ -505,7 +505,7 @@ stop(){
       ${SLEEP} 2
       ${RM} -rf ${PID_DIR}/${VM_NAME}.pid
       ${RM} -rf ${PID_DIR}/${VM_NAME}.sock
-      ( ${VM_HAVE_QGA} ) && ${RM} -rf ${PID_DIR}/${VM_NAME}-qga.sock
+      ${RM} -rf ${PID_DIR}/${VM_NAME}-qga.sock
       ewarn " Killed ${VM_NAME}"
     fi
     # stop qtap device
