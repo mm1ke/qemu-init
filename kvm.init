@@ -260,10 +260,9 @@ cfgcheck(){
 # function to generate the start config
 #
 myconfig(){
-  myconfig=""
 
   # basic config
-  myconfig="-name ${VM_NAME} \
+  local myconfig="-name ${VM_NAME} \
   -runas ${VM_USER} \
   -monitor unix:${PID_DIR}/${VM_NAME}.sock,server,nowait \
   -pidfile ${PID_DIR}/${VM_NAME}.pid "
@@ -462,7 +461,7 @@ stop(){
     VM_KILL_WAIT=80
   fi
 
-  KVM_PID=`<${PID_DIR}/${VM_NAME}.pid`
+  local KVM_PID=`<${PID_DIR}/${VM_NAME}.pid`
 
   if ( ${PS} -p ${KVM_PID} --no-heading > /dev/null 2>&1 ); then
   
