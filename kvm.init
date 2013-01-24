@@ -26,7 +26,7 @@
 extra_commands="save tapdel"
 
 description="Start Qemu guests"
-description_save="Saves the changes from within a guest to the harddisk"
+description_save="Saves the changes within a guest to the harddisk"
 description_tapdel="Deletes unused tap devices (like from a crashed guest)"
 
 # programms
