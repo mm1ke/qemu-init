@@ -52,6 +52,7 @@ TMP_DIR="/var/tmp"
 # true/false
 DEBUG=false
 
+VM_NAME=${RC_SVCNAME#*.}
 #
 # depend()
 # custom depends
@@ -100,7 +101,6 @@ tapdel(){
 # save changes within a guest
 #
 save(){
-  VM_NAME=${RC_SVCNAME#*.}
   ewarn "Command is disabled right now"
   #echo "commit all" | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
 }
@@ -110,9 +110,8 @@ save(){
 # make some configuration checks
 #
 cfgcheck(){
-  VM_NAME=${RC_SVCNAME#*.}
-  
-  # basic tests/settings
+
+# basic tests/settings
   [ -d ${PID_DIR} ] || ${MKDIR} ${PID_DIR}
   [ -d ${TMP_DIR} ] || TMP_DIR="/var/tmp"
   if ! [ `${GREP} -i "^${VM_USER}" /etc/passwd` ]; then
@@ -412,8 +411,6 @@ start(){
     exit 1
   fi
 
-  VM_NAME=${RC_SVCNAME#*.}
-
   cfgcheck || return 1
   myconfig || return 1
   [ ${VM_NET_TYP} == "tap" ] && start_tap_device
@@ -465,7 +462,6 @@ stop(){
     VM_KILL_WAIT=80
   fi
 
-  VM_NAME=${RC_SVCNAME#*.}
   KVM_PID=`<${PID_DIR}/${VM_NAME}.pid`
 
   if ( ${PS} -p ${KVM_PID} --no-heading > /dev/null 2>&1 ); then
