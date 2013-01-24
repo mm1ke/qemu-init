@@ -262,7 +262,7 @@ cfgcheck(){
 myconfig(){
 
   # basic config
-  local myconfig="-name ${VM_NAME} \
+  myconfig="-name ${VM_NAME} \
   -runas ${VM_USER} \
   -monitor unix:${PID_DIR}/${VM_NAME}.sock,server,nowait \
   -pidfile ${PID_DIR}/${VM_NAME}.pid "
@@ -465,6 +465,7 @@ stop(){
 
   if ( ${PS} -p ${KVM_PID} --no-heading > /dev/null 2>&1 ); then
   
+    # set VM_NET_TYP to none if the var is empty, otherwise the below test would fail if the var would be empty
     [ -z "${VM_NET_TYP}" ] && VM_NET_TYP="none"
     # find the next free qtap interface
     if [ ${VM_NET_TYP} == "tap" ]; then
