@@ -43,6 +43,7 @@ HEAD="/bin/head"
 EGREP="/bin/egrep"
 NETSTAT="/bin/netstat"
 CUT="/bin/cut"
+MKDIR="/bin/mkdir"
 
 # PID dir
 PID_DIR="/var/run/kvm"
