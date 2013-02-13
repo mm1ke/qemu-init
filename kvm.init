@@ -149,7 +149,8 @@ cfgcheck(){
       VM_REMOTE_ACCESS_LISTEN_IP="${ip_address}"
     fi
     # set port
-    # i don't use scan_running_vm here because other programms can use those ports too...
+    # i don't use scan_running_vm here because other programms could use those ports too...
+    # have to check with netstat if a port is free
     if [ -z "${VM_REMOTE_ACCESS_PORT}" ]; then
       local port_nr=0
       while $(${NETSTAT} -nat | ${GREP} "${VM_REMOTE_ACCESS_LISTEN_IP}:580${port_nr}[^0-9]" >/dev/null ); do
