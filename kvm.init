@@ -474,6 +474,7 @@ stop(){
 	# try qtap0 to qtap30 for possible 30 virtual maschines
 	if [ ${stop_id} -eq 30 ]; then
 	  ewarn "Couldn't find a qtap device. Please check manually if a qtap device is leftover."
+	  stop_id=""
 	  break
 	fi
       done
@@ -505,9 +506,7 @@ stop(){
     done
 
     # stop qtap device
-    if [ ${VM_NET_TYP} == "tap" ]; then    
-      [ ${stop_id} -eq 30 ] || stop_tap_device
-    fi
+    [ -z ${stop_id} ] || stop_tap_device
 
     # remove remaining files
     ${RM} -rf ${PID_DIR}/${VM_NAME}.pid
