@@ -49,6 +49,8 @@ MKDIR="/bin/mkdir"
 PID_DIR="/var/run/kvm"
 # TMP dir
 TMP_DIR="/var/tmp"
+# max supported vms
+MAX_VMS=30
 
 # true/false
 DEBUG=false
@@ -241,6 +243,11 @@ cfgcheck(){
 	while ( ${BRCTL} show | ${GREP} qtap${start_id} >/dev/null 2>&1 ); do
 	  let "start_id += 1"
 	done
+	# 
+	if [ ${start_id} -ge ${MAX_VMS} ]
+	  eerror "Maximum number of vm's reached. Please increase the MAX_VMS variable."
+	  return 1
+	fi
 	;;
       *)
 	if ! [ ${VM_NET_TYP} == "user" ]; then
@@ -471,8 +478,8 @@ stop(){
       stop_id=0
       while ! ( ${PS} -p ${KVM_PID} -f --no-heading | ${GREP} qtap${stop_id} >/dev/null ); do
 	let "stop_id += 1"
-	# try qtap0 to qtap30 for possible 30 virtual maschines
-	if [ ${stop_id} -eq 30 ]; then
+	# try qtap0 to qtap${MAX_VMS} for possible ${MAX_VMS} virtual maschines
+	if [ ${stop_id} -eq ${MAX_VMS} ]; then
 	  ewarn "Couldn't find a qtap device. Please check manually if a qtap device is leftover."
 	  stop_id=""
 	  break
