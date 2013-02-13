@@ -473,7 +473,7 @@ stop(){
 	# try qtap0 to qtap30 for possible 30 virtual maschines
 	if [ ${stop_id} -eq 30 ]; then
 	  ewarn "Couldn't find a qtap device. Please check manually if a qtap device is leftover."
-	  break;
+	  break
 	fi
       done
     fi
@@ -486,34 +486,33 @@ stop(){
     einfon "Waiting \"$((VM_KILL_WAIT))\" seconds for ${VM_NAME} to shutdown ."
     for timer in `eval echo {1..$((VM_KILL_WAIT/2))}`; do
       if [ -z "`${PS} -p ${KVM_PID} --no-heading`" ]; then
-	${RM} -rf ${PID_DIR}/${VM_NAME}.pid
-	${RM} -rf ${PID_DIR}/${VM_NAME}.sock
-	( ${VM_HAVE_QGA} ) && ${RM} -rf ${PID_DIR}/${VM_NAME}-qga.sock
 	echo
 	einfo " Stopped ${VM_NAME}"
-	break;
+	break
+      # if the system couldn't be shutdown
+      elif [ ${timer} -eq "$((VM_KILL_WAIT/2))" ]; then
+	echo
+	eerror "Shuddown of ${VM_NAME} failed, will kill guest"
+	# kill qemu
+	kill -9 ${KVM_PID} > /dev/null 2>&1
+	${SLEEP} 2
+	ewarn " Killed ${VM_NAME}"
+	break
       fi
       ${SLEEP} 2
       echo -n "."
     done
 
-    # if the system couldn't be shutdown
-    if [ ${timer} -eq "$((VM_KILL_WAIT/2))" ]; then
-      echo
-      eerror "Shuddown of ${VM_NAME} failed, guest will be killed"
-      # kill qemu if term dosn't work
-      kill -9 ${KVM_PID} > /dev/null 2>&1
-      ${SLEEP} 2
-      ${RM} -rf ${PID_DIR}/${VM_NAME}.pid
-      ${RM} -rf ${PID_DIR}/${VM_NAME}.sock
-      ${RM} -rf ${PID_DIR}/${VM_NAME}-qga.sock
-      ewarn " Killed ${VM_NAME}"
-    fi
     # stop qtap device
     if [ ${VM_NET_TYP} == "tap" ]; then    
       [ ${stop_id} -eq 30 ] || stop_tap_device
     fi
-  
+
+    # remove remaining files
+    ${RM} -rf ${PID_DIR}/${VM_NAME}.pid
+    ${RM} -rf ${PID_DIR}/${VM_NAME}.sock
+    ${RM} -rf ${PID_DIR}/${VM_NAME}-qga.sock
+
   else
     ewarn "Couldn't find the process for ${VM_NAME}, guest might already down"
     eend 0
