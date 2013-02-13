@@ -243,7 +243,7 @@ cfgcheck(){
 	while ( ${BRCTL} show | ${GREP} qtap${start_id} >/dev/null 2>&1 ); do
 	  let "start_id += 1"
 	done
-	# 
+	# check for max_vms
 	if [ ${start_id} -ge ${MAX_VMS} ]
 	  eerror "Maximum number of vm's reached. Please increase the MAX_VMS variable."
 	  return 1
