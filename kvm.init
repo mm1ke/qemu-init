@@ -364,7 +364,7 @@ myconfig(){
 # function to find out the tap id
 #
 start_tap_device(){
-  einfo "Setting up the tap interface: qtap$start_id"
+  einfo "Setting up the tap interface: qtap${start_id}"
   ${IP} tuntap add dev qtap${start_id} mode tap user ${VM_USER} || return 1
 
   einfo " Linking the bridge interface with qtap${start_id}"
