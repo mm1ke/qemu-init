@@ -122,7 +122,7 @@ cfgcheck(){
     VM_USER="root"
   fi
 
-  if [ -n ${VM_KERNEL} ] && [ -n ${VM_INITRD} ]; then
+  if [ -n "${VM_KERNEL}" ] && [ -n "${VM_INITRD}" ]; then
     VM_BOOT_DEV=""
   else
     VM_KERNEL=""
