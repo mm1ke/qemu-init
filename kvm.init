@@ -250,7 +250,7 @@ cfgcheck(){
 	  let "start_id += 1"
 	done
 	# check for max_vms
-	if [ ${start_id} -ge ${MAX_VMS} ]
+	if [ ${start_id} -ge ${MAX_VMS} ]; then
 	  eerror "Maximum number of vm's reached. Please increase the MAX_VMS variable."
 	  return 1
 	fi
