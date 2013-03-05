@@ -28,6 +28,7 @@ extra_commands="save tapdel"
 description="Start Qemu guests"
 description_save="Saves the changes within a guest to the harddisk"
 description_tapdel="Deletes unused tap devices (like from a crashed guest)"
+description_snapshot="Start the vm in snapshot mode"
 
 # programms
 SLEEP="/usr/bin/sleep"
@@ -56,6 +57,7 @@ MAX_VMS=30
 DEBUG=false
 
 VM_NAME=${RC_SVCNAME#*.}
+
 #
 # depend()
 # custom depends
@@ -403,6 +405,15 @@ stop_tap_device(){
   ${SLEEP} 2
   einfo " Removing the tap interface: qtap${stop_id}"
   ${IP} tuntap del qtap${stop_id} mode tap
+}
+
+#
+# snapshot()
+# starts the vm in snapshotmode
+#
+snapshot(){
+  VM_SNAPSHOTMODE=true
+  start
 }
 
 #
