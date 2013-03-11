@@ -155,8 +155,7 @@ cfgcheck(){
   if ( ${VM_HAVE_REOMTE_ACCESS} ); then
     # set listening ip
     if [ -z "${VM_REMOTE_ACCESS_LISTEN_IP}" ]; then
-      ip_address=`${IP} address show ${BRDEV}|${EGREP} -o '[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}'|${HEAD} -n1`
-      VM_REMOTE_ACCESS_LISTEN_IP="${ip_address}"
+      VM_REMOTE_ACCESS_LISTEN_IP="`${IP} address show ${BRDEV}|${EGREP} -o '[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}'|${HEAD} -n1`"
     fi
     # set port
     # i don't use scan_running_vm here because other programms could use those ports too...
