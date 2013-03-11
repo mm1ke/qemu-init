@@ -33,7 +33,7 @@ description_tapdel="Deletes unused tap devices (like from a crashed guest)"
 SLEEP="/usr/bin/sleep"
 RM="/bin/rm"
 PS="/bin/ps"
-GREP="/bin/grep"
+#GREP="/bin/grep"
 BRCTL="/sbin/brctl"
 IP="/sbin/ip"
 NC="/usr/bin/nc"
@@ -42,7 +42,7 @@ WC="/bin/wc"
 HEAD="/bin/head"
 EGREP="/bin/egrep"
 NETSTAT="/bin/netstat"
-CUT="/bin/cut"
+#CUT="/bin/cut"
 MKDIR="/bin/mkdir"
 
 # PID dir
@@ -74,7 +74,7 @@ scan_running_vm(){
   local running_vm_pid
   for running_vm in ${PID_DIR}/*.pid; do
     running_vm_pid=`<${running_vm}`
-    if ( `${PS} -p ${running_vm_pid} -f --no-heading | ${GREP} "$1" > /dev/null 2>&1` ); then
+    if ( `${PS} -p ${running_vm_pid} -f --no-heading | ${EGREP} "$1" > /dev/null 2>&1` ); then
       match_vm=`echo ${running_vm%.pid}`
       return 1
     fi
@@ -88,15 +88,17 @@ scan_running_vm(){
 #
 tapdel(){
   local active_qtap
-  if [ "$VM_NAME" == "init" ]; then
-    BRDEV=`${BRCTL} show|${CUT} -f 1|${GREP} -v bridge|${GREP} -v '^$'`
+  # BRDEV must be set in kvm.$vmname
+  if [ -z "${BRDEV}" ]; then
+    ewarn "No BRDEV is set in /etc/conf.d/kvm.${VM_NAME}"
+  else
+    for active_qtap in `${BRCTL} show|${EGREP} qtap`; do
+      if scan_running_vm "ifname=${active_qtap}"; then
+	stop_id=${active_qtap:4}
+	stop_tap_device
+      fi
+    done
   fi
-  for active_qtap in `${BRCTL} show|${GREP} qtap`; do
-    if scan_running_vm "ifname=${active_qtap}"; then
-      stop_id=${active_qtap:4}
-      stop_tap_device
-    fi
-  done      
 }
 
 #
@@ -123,7 +125,7 @@ cfgcheck(){
 # basic tests/settings
   [ -d ${PID_DIR} ] || ${MKDIR} ${PID_DIR}
   [ -d ${TMP_DIR} ] || TMP_DIR="/var/tmp"
-  if ! [ `${GREP} -i "^${VM_USER}" /etc/passwd` ]; then
+  if ! [ `${EGREP} -i "^${VM_USER}" /etc/passwd` ]; then
     ewarn "User \"${VM_USER}\" not found in /etc/passwd. Will start guest as \"root\""
     VM_USER="root"
   fi
@@ -161,12 +163,12 @@ cfgcheck(){
     # have to check with netstat if a port is free
     if [ -z "${VM_REMOTE_ACCESS_PORT}" ]; then
       local port_nr=0
-      while $(${NETSTAT} -nat | ${GREP} "${VM_REMOTE_ACCESS_LISTEN_IP}:580${port_nr}[^0-9]" >/dev/null ); do
+      while $(${NETSTAT} -nat | ${EGREP} "${VM_REMOTE_ACCESS_LISTEN_IP}:580${port_nr}[^0-9]" >/dev/null ); do
 	  let "port_nr += 1"
       done
       VM_REMOTE_ACCESS_PORT="580${port_nr}"
     # check port if it was manuel set
-    elif $(${NETSTAT} -nat | ${GREP} "${VM_REMOTE_ACCESS_LISTEN_IP}:${VM_REMOTE_ACCESS_PORT}[^0-9]" >/dev/null); then
+    elif $(${NETSTAT} -nat | ${EGREP} "${VM_REMOTE_ACCESS_LISTEN_IP}:${VM_REMOTE_ACCESS_PORT}[^0-9]" >/dev/null); then
       eerror "Port is already in use. Please choose an different one in /etc/conf.d/kvm.${VM_NAME}"
       return 1
     fi    
@@ -246,7 +248,7 @@ cfgcheck(){
 	fi
 	# get the guest_nummber for qtap...
 	start_id=0;
-	while ( ${BRCTL} show | ${GREP} qtap${start_id} >/dev/null 2>&1 ); do
+	while ( ${BRCTL} show | ${EGREP} qtap${start_id} >/dev/null 2>&1 ); do
 	  let "start_id += 1"
 	done
 	# check for max_vms
@@ -482,7 +484,7 @@ stop(){
     # find the next free qtap interface
     if [ ${VM_NET_TYP} == "tap" ]; then
       stop_id=0
-      while ! ( ${PS} -p ${KVM_PID} -f --no-heading | ${GREP} qtap${stop_id} >/dev/null ); do
+      while ! ( ${PS} -p ${KVM_PID} -f --no-heading | ${EGREP} qtap${stop_id} >/dev/null ); do
 	let "stop_id += 1"
 	# try qtap0 to qtap${MAX_VMS} for possible ${MAX_VMS} virtual maschines
 	if [ ${stop_id} -eq ${MAX_VMS} ]; then
