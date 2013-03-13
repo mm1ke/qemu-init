@@ -211,9 +211,9 @@ cfgcheck(){
       return 1
     fi
     # set default settings for hd if nothing is set
-    ! [ -z "${VM_IMG_CACHE}" ] || VM_IMG_CACHE="none"
-    ! [ -z "${VM_IMG_IF}" ] || VM_IMG_IF="ide"
-    ! [ -z "${VM_IMG_AIO}" ] || VM_IMG_AIO="threads"
+    [ -z "${VM_IMG_CACHE}" ] && VM_IMG_CACHE="none"
+    [ -z "${VM_IMG_IF}" ] && VM_IMG_IF="ide"
+    [ -z "${VM_IMG_AIO}" ] && VM_IMG_AIO="threads"
   fi
 
   # network checks/default settings
