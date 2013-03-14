@@ -256,11 +256,11 @@ cfgcheck(){
 	  return 1
 	fi
 	;;
+      user|none)
+	;;
       *)
-	if ! [ ${VM_NET_TYP} == "user" ]; then
-	  ewarn "** Unknow Network Typ. Network will be disabled"
-	  VM_NET_TYP="none"
-	fi
+	ewarn "** Unknow Network Typ. Network will be disabled"
+	VM_NET_TYP="none"
 	;;
     esac
   fi
