@@ -23,11 +23,12 @@
 # Discription:
 # start/stop script for qemu guests
 
-extra_commands="save tapdel"
+extra_commands="save tapdel info"
 
 description="Start Qemu guests"
 description_save="Saves the changes within a guest to the harddisk"
 description_tapdel="Deletes unused tap devices (like from a crashed guest)"
+description_info="Show information about a running vm"
 
 # programms
 SLEEP="/usr/bin/sleep"
@@ -112,6 +113,55 @@ save(){
   # last test:
   # app-emulation/qemu-1.2.2-r2 - dont work
 
+}
+
+info(){
+  if [ "$VM_NAME" == "init" ]; then
+    ewarn "not yet implemented"
+  else
+    # default settings
+    address_port="NONE"
+    qtap="NONE"
+    
+    # get the information
+    if [ -e ${PID_DIR}/${VM_NAME}.pid ]; then
+      local pid=`<${PID_DIR}/${VM_NAME}.pid`
+      local uptime=`${PS} -eo%p%t|${GREP} ${pid}`
+      if ( ${VM_HAVE_REOMTE_ACCESS} ); then
+	# echo ${spice_address#*:} # to get the address:port
+	if [ "${VM_REMOTE_ACCESS}" == "spice" ]; then
+	  local address_port="`echo "info spice" | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock >/dev/null 2>&1 |${GREP} address`"
+	elif [ "${VM_REMOTE_ACCESS}" == "vnc" ]; then
+	  local address_port="`echo "info vnc" | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock >/dev/null 2>&1 |${GREP} address`"
+	else
+	  ewarn "${VM_REMOTE_ACCESS} not valid"
+	fi
+      fi
+      
+      if ! [ "${VM_NET_TYP}" == "none" ]; then
+	if [ "${VM_NET_TYP}" == "tap" ]; then
+	  local qtap_dev=mac_addr="`echo "info network" | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 | ${GREP} ${VM_NAME} | ${CUT} -d ',' -f 2 | ${CUT} -d '=' -f 2`"
+	fi
+	if [ -z "${VM_MAC_ADDRESS}" ]; then
+	  # echo ${mac_addr##*=}
+	  local mac_addr="`echo "info network" | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 | ${GREP} macaddr`"
+	else
+	  mac_addr="${VM_MAC_ADDRESS}"
+	fi
+      fi
+    fi
+    
+    einfo "Information about: ${VM_NAME}"
+    einfo
+    einfo " * Uptime: ${uptime}"
+    einfo " * PID: ${pid}"
+    einfo " * Remote Access via: ${VM_REMOTE_ACCESS}"
+    einfo " * Ip/Port: ${spice_address#*:}"
+    einfo " * Network Typ: ${VM_NET_TYP}"
+    einfo " * qdap-device: ${qdap}"
+    einfo " * MAC-Address: ${mac_addr##*=}"
+    
+  fi
 }
 
 #
