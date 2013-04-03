@@ -130,9 +130,9 @@ info(){
       if ( ${VM_HAVE_REOMTE_ACCESS} ); then
 	# echo ${spice_address#*:} # to get the address:port
 	if [ "${VM_REMOTE_ACCESS}" == "spice" ]; then
-	  local address_port="`echo "info spice" | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock >/dev/null 2>&1 |${GREP} address`"
+	  local address_port="`echo "info spice" | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 |${GREP} address`"
 	elif [ "${VM_REMOTE_ACCESS}" == "vnc" ]; then
-	  local address_port="`echo "info vnc" | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock >/dev/null 2>&1 |${GREP} address`"
+	  local address_port="`echo "info vnc" | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock  2>&1 |${GREP} address`"
 	else
 	  ewarn "${VM_REMOTE_ACCESS} not valid"
 	fi
@@ -140,7 +140,7 @@ info(){
       
       if ! [ "${VM_NET_TYP}" == "none" ]; then
 	if [ "${VM_NET_TYP}" == "tap" ]; then
-	  local qtap_dev=mac_addr="`echo "info network" | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 | ${GREP} ${VM_NAME} | ${CUT} -d ',' -f 2 | ${CUT} -d '=' -f 2`"
+	  local qtap_dev="`echo "info network" | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 | ${GREP} ${VM_NAME} | ${CUT} -d ',' -f 2 | ${CUT} -d '=' -f 2`"
 	fi
 	if [ -z "${VM_MAC_ADDRESS}" ]; then
 	  # echo ${mac_addr##*=}
@@ -158,7 +158,7 @@ info(){
     einfo " * Remote Access via: ${VM_REMOTE_ACCESS}"
     einfo " * Ip/Port: ${spice_address#*:}"
     einfo " * Network Typ: ${VM_NET_TYP}"
-    einfo " * qdap-device: ${qdap}"
+    einfo " * qdap-device: ${qtap_dev}"
     einfo " * MAC-Address: ${mac_addr##*=}"
     
   fi
