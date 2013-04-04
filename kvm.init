@@ -205,9 +205,10 @@ cfgcheck(){
 # basic tests/settings
   [ -d ${PID_DIR} ] || ${MKDIR} ${PID_DIR}
   [ -d ${TMP_DIR} ] || TMP_DIR="/var/tmp"
+  
   if ! [ `${GREP} -i "^${VM_USER}" /etc/passwd` ]; then
-    ewarn "User \"${VM_USER}\" not found in /etc/passwd. Will start guest as \"root\""
-    VM_USER="root"
+    eerror "User \"${VM_USER}\" not found in /etc/passwd."
+    return 1
   fi
 
   if [ -n "${VM_KERNEL}" ] && [ -n "${VM_INITRD}" ]; then
