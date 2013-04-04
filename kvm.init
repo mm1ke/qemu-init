@@ -115,7 +115,21 @@ save(){
 
 }
 
+#
+# info()
+# get information about running vms
+#
 info(){
+
+  # there are two possibilities how to run this command:
+  # first: calling kvm.init with the vm-name (/etc/init.d/kvm.winxp info)
+  # 	which would show information only about the vm "winxp"
+  # secondly: calling kvm.init directly (/etc/init.d/kvm.init info)
+  # 	this however is not yet implemented. (see todo)
+  # 	my plan is that if calling kvm.init directly, the script should output
+  #	(if possibly in a nice form) information about ALL running vm's.
+
+  # TODO: implement kvm.init info
   if [ "$VM_NAME" == "init" ]; then
     ewarn "not yet implemented"
   else
@@ -126,13 +140,18 @@ info(){
     # get the information
     if [ -e ${PID_DIR}/${VM_NAME}.pid ]; then
       local pid=`<${PID_DIR}/${VM_NAME}.pid`
-      local uptime=`${PS} -eo%p%t|${GREP} ${pid}`
+      local uptime=`${PS} -o "etime=" ${pid}`
+      local starttime=`${PS} -o "lstart=" ${pid}`
       if ( ${VM_HAVE_REOMTE_ACCESS} ); then
-	# echo ${spice_address#*:} # to get the address:port
+	# echo ${address_port#*:} # to get the address:port
 	if [ "${VM_REMOTE_ACCESS}" == "spice" ]; then
-	  local address_port="`echo "info spice" | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 |${GREP} address`"
+	  local address_port="`echo "info spice" \
+	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
+	    | ${GREP} address`"
 	elif [ "${VM_REMOTE_ACCESS}" == "vnc" ]; then
-	  local address_port="`echo "info vnc" | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock  2>&1 |${GREP} address`"
+	  local address_port="`echo "info vnc" \
+	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock  2>&1 \
+	    | ${GREP} address`"
 	else
 	  ewarn "${VM_REMOTE_ACCESS} not valid"
 	fi
@@ -140,26 +159,39 @@ info(){
       
       if ! [ "${VM_NET_TYP}" == "none" ]; then
 	if [ "${VM_NET_TYP}" == "tap" ]; then
-	  local qtap_dev="`echo "info network" | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 | ${GREP} ${VM_NAME} | ${CUT} -d ',' -f 2 | ${CUT} -d '=' -f 2`"
+	  local qtap_dev="`echo "info network" \
+	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
+	    | ${GREP} ${VM_NAME} \
+	    | ${CUT} -d ',' -f 2 \
+	    | ${CUT} -d '=' -f 2`"
 	fi
 	if [ -z "${VM_MAC_ADDRESS}" ]; then
 	  # echo ${mac_addr##*=}
-	  local mac_addr="`echo "info network" | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 | ${GREP} macaddr`"
+	  local mac_addr="`echo "info network" \
+	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
+	    | ${GREP} macaddr`"
 	else
 	  mac_addr="${VM_MAC_ADDRESS}"
 	fi
       fi
     fi
     
+    # it seems that einfo cannot handle variable subtitutions
+    # thus output the information with einfon and echo
     einfo "Information about: ${VM_NAME}"
     einfo
-    einfo " * Uptime: ${uptime}"
-    einfo " * PID: ${pid}"
-    einfo " * Remote Access via: ${VM_REMOTE_ACCESS}"
-    einfo " * Ip/Port: ${spice_address#*:}"
-    einfo " * Network Typ: ${VM_NET_TYP}"
-    einfo " * qdap-device: ${qtap_dev}"
-    einfo " * MAC-Address: ${mac_addr##*=}"
+    einfo " VM started at: ${starttime}"
+    einfo " Uptime: ${uptime}"
+    einfo " PID: ${pid}"
+    einfo
+    einfo " Remote Access via: ${VM_REMOTE_ACCESS}"
+    einfon " Ip/Port: "
+    echo ${address_port#*:}
+    einfo
+    einfo " Network Typ: ${VM_NET_TYP}"
+    einfo " qdap-device: ${qtap_dev}"
+    einfon " MAC-Address: "
+    echo ${mac_addr##*=}
     
   fi
 }
