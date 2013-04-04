@@ -236,7 +236,9 @@ cfgcheck(){
   if ( ${VM_HAVE_REOMTE_ACCESS} ); then
     # set listening ip
     if [ -z "${VM_REMOTE_ACCESS_LISTEN_IP}" ]; then
-      ip_address=`${IP} address show ${BRDEV}|${EGREP} -o '[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}'|${HEAD} -n1`
+      ip_address=`${IP} address show ${BRDEV} \
+	| ${EGREP} -o '[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}'\
+	| ${HEAD} -n1`
       VM_REMOTE_ACCESS_LISTEN_IP="${ip_address}"
     fi
     # set port
@@ -245,12 +247,12 @@ cfgcheck(){
     if [ -z "${VM_REMOTE_ACCESS_PORT}" ]; then
       local port_nr=0
       while $(${NETSTAT} -nat | ${GREP} "${VM_REMOTE_ACCESS_LISTEN_IP}:580${port_nr}[^0-9]" >/dev/null ); do
-	  let "port_nr += 1"
+	let "port_nr += 1"
       done
       VM_REMOTE_ACCESS_PORT="580${port_nr}"
     # check port if it was manuel set
     elif $(${NETSTAT} -nat | ${GREP} "${VM_REMOTE_ACCESS_LISTEN_IP}:${VM_REMOTE_ACCESS_PORT}[^0-9]" >/dev/null); then
-      eerror "Port is already in use. Please choose an different one in /etc/conf.d/kvm.${VM_NAME}"
+      eerror "Port is already in use. Please choose different one (/etc/conf.d/kvm.${VM_NAME})"
       return 1
     fi    
   else
@@ -261,7 +263,7 @@ cfgcheck(){
   # cdrom checks
   if ! [ -z "${VM_CDROM}" ]; then
     if ! [ -e "${VM_CDROM}" ]; then
-      eerror "CD-Image dosn't exist. Please check your config in /etc/conf.d/kvm.${VM_NAME}"
+      eerror "Image dosn't exist. Please check your config (/etc/conf.d/kvm.${VM_NAME})"
       return 1
     fi
   fi
@@ -269,7 +271,7 @@ cfgcheck(){
   # image checks/default settings
   if ( ${VM_HAVE_HARDDISK} ); then
     if [ -z "${VM_IMAGE}" ]; then
-      eerror " No image set. Please check your /etc/conf.d/kvm.${VM_NAME}"
+      eerror "No vm-image set. Please check your config (/etc/conf.d/kvm.${VM_NAME})"
       return 1
     fi
 
@@ -277,19 +279,19 @@ cfgcheck(){
       if [ -e "${VM_IMAGE}/${VM_NAME}" ]; then
 	VM_IMAGE="${VM_IMAGE}/${VM_NAME}"
       elif [ `${LS} ${VM_IMAGE}${VM_NAME}[.]* | ${WC} -l` -gt 1 ]; then
-	  eerror "More than one possible guest vm found. Please set the correct in /etc/conf.d/kvm.${VM_NAME}"
+	  eerror "More than one possible guest vm images found. Please check your config (/etc/conf.d/kvm.${VM_NAME})"
 	  return 1
       else
 	VM_IMAGE=`${LS} ${VM_IMAGE}/${VM_NAME}[.]*`
-	ewarn " Image set to ${VM_IMAGE}"
+	ewarn " VM-Image set to ${VM_IMAGE}"
       fi
     elif ! [ -e "${VM_IMAGE}" ]; then
-      eerror "Image not found. Please point to the right path/image of the vm in VM_IMAGE in /etc/conf.d/kvm.${VM_NAME}"
+      eerror "VM-Image not found. Please check your config (/etc/conf.d/kvm.${VM_NAME})"
       return 1
     fi
     # check if image is already running
     if ! scan_running_vm "${VM_IMAGE}"; then
-      eerror "This image is already started by \"/etc/init.d/kvm.${match_vm##*/}\". Use another image!"
+      eerror "This vm-image is already started by \"/etc/init.d/kvm.${match_vm##*/}\"!"
       return 1
     fi
     # set default settings for hd if nothing is set
@@ -307,7 +309,7 @@ cfgcheck(){
     # check for mac address
     if ! [ -z "${VM_MAC_ADDRESS}" ]; then
       if ! scan_running_vm "${VM_MAC_ADDRESS}"; then
-	eerror "mac address already used by \"/etc/init.d/kvm.${match_vm##*/}\". Please change your mac address in /etc/conf.d/kvm.${VM_NAME}"
+	eerror "MAC-address already used by \"/etc/init.d/kvm.${match_vm##*/}\"!"
 	return 1
       fi
     else
@@ -320,11 +322,11 @@ cfgcheck(){
       tap)
 	if [ -n "${BRDEV}" ]; then
 	  if ! ( ${IP} link show ${BRDEV} > /dev/null 2>&1 ); then
-	    eerror "${BRDEV} dosen't exist. Please check your /etc/conf.d/kvm.${VM_NAME}"
+	    eerror "${BRDEV} dosen't exist. Please check your config (/etc/conf.d/kvm.${VM_NAME})"
 	    return 1
 	  fi
 	else
-	  eerror "You need a bridge device! Please check your /etc/conf.d/kvm.${VM_NAME}"
+	  eerror "You need a bridge device! Please check your config (/etc/conf.d/kvm.${VM_NAME})"
 	  return 1
 	fi
 	# get the guest_nummber for qtap...
@@ -340,7 +342,7 @@ cfgcheck(){
 	;;
       *)
 	if ! [ ${VM_NET_TYP} == "user" ]; then
-	  ewarn "** Unknow Network Typ. Network will be disabled"
+	  ewarn " ** Unknow Network Typ! Network will be disabled!"
 	  VM_NET_TYP="none"
 	fi
 	;;
@@ -569,7 +571,7 @@ stop(){
 	let "stop_id += 1"
 	# try qtap0 to qtap${MAX_VMS} for possible ${MAX_VMS} virtual maschines
 	if [ ${stop_id} -eq ${MAX_VMS} ]; then
-	  ewarn "Couldn't find a qtap device. Please check manually if a qtap device is leftover."
+	  ewarn "Couldn't find a qtap device. Please run \"/etc/init.d/kvm.init tapdel\""
 	  stop_id=""
 	  break
 	fi
@@ -610,7 +612,7 @@ stop(){
     ${RM} -rf ${PID_DIR}/${VM_NAME}-qga.sock
 
   else
-    ewarn "Couldn't find the process for ${VM_NAME}, guest might already down"
+    ewarn "Couldn't find the process for ${VM_NAME}, guest might already down."
     eend 0
   fi
 
