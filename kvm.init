@@ -23,7 +23,7 @@
 # Discription:
 # start/stop script for qemu guests
 
-extra_commands="save tapdel info"
+extra_commands="tapdel info"
 
 description="Start Qemu guests"
 description_save="Saves the changes within a guest to the harddisk"
