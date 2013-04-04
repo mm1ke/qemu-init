@@ -34,7 +34,6 @@ description_info="Show information about a running vm"
 SLEEP="/usr/bin/sleep"
 RM="/bin/rm"
 PS="/bin/ps"
-#GREP="/bin/grep"
 BRCTL="/sbin/brctl"
 IP="/sbin/ip"
 NC="/usr/bin/nc"
@@ -43,7 +42,7 @@ WC="/bin/wc"
 HEAD="/bin/head"
 EGREP="/bin/egrep"
 NETSTAT="/bin/netstat"
-#CUT="/bin/cut"
+CUT="/bin/cut"
 MKDIR="/bin/mkdir"
 
 # PID dir
@@ -75,7 +74,7 @@ scan_running_vm(){
   local running_vm_pid
   for running_vm in ${PID_DIR}/*.pid; do
     running_vm_pid=`<${running_vm}`
-    if ( `${PS} -o "command=" ${running_vm_pid} | ${GREP} "$1" > /dev/null 2>&1` ); then
+    if ( `${PS} -o "command=" ${running_vm_pid} | ${EGREP} "$1" > /dev/null 2>&1` ); then
       match_vm=`echo ${running_vm%.pid}`
       return 1
     fi
@@ -149,11 +148,11 @@ info(){
 	if [ "${VM_REMOTE_ACCESS}" == "spice" ]; then
 	  local address_port="`echo "info spice" \
 	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-	    | ${GREP} address`"
+	    | ${EGREP} address`"
 	elif [ "${VM_REMOTE_ACCESS}" == "vnc" ]; then
 	  local address_port="`echo "info vnc" \
 	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock  2>&1 \
-	    | ${GREP} address`"
+	    | ${EGREP} address`"
 	else
 	  ewarn "${VM_REMOTE_ACCESS} not valid"
 	fi
@@ -163,7 +162,7 @@ info(){
 	if [ "${VM_NET_TYP}" == "tap" ]; then
 	  local qtap_dev="`echo "info network" \
 	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-	    | ${GREP} ${VM_NAME} \
+	    | ${EGREP} ${VM_NAME} \
 	    | ${CUT} -d ',' -f 2 \
 	    | ${CUT} -d '=' -f 2`"
 	fi
@@ -171,7 +170,7 @@ info(){
 	  # echo ${mac_addr##*=}
 	  local mac_addr="`echo "info network" \
 	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-	    | ${GREP} macaddr`"
+	    | ${EGREP} macaddr`"
 	else
 	  mac_addr="${VM_MAC_ADDRESS}"
 	fi
@@ -208,7 +207,7 @@ cfgcheck(){
   [ -d ${PID_DIR} ] || ${MKDIR} ${PID_DIR}
   [ -d ${TMP_DIR} ] || TMP_DIR="/var/tmp"
   
-  if ! [ `${GREP} -i "^${VM_USER}" /etc/passwd` ]; then
+  if ! [ `${EGREP} -i "^${VM_USER}" /etc/passwd` ]; then
     eerror "User \"${VM_USER}\" not found in /etc/passwd."
     return 1
   fi
@@ -238,10 +237,9 @@ cfgcheck(){
   if ( ${VM_HAVE_REOMTE_ACCESS} ); then
     # set listening ip
     if [ -z "${VM_REMOTE_ACCESS_LISTEN_IP}" ]; then
-      ip_address=`${IP} address show ${BRDEV} \
+      VM_REMOTE_ACCESS_LISTEN_IP="`${IP} address show ${BRDEV} \
 	| ${EGREP} -o '[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}'\
-	| ${HEAD} -n1`
-      VM_REMOTE_ACCESS_LISTEN_IP="${ip_address}"
+	| ${HEAD} -n1`"
     fi
     # set port
     # i don't use scan_running_vm here because other programms could use those ports too...
@@ -569,7 +567,7 @@ stop(){
     # find the next free qtap interface
     if [ ${VM_NET_TYP} == "tap" ]; then
       stop_id=0
-      while ! ( ${PS} -o "command=" ${KVM_PID} | ${GREP} qtap${stop_id} >/dev/null ); do
+      while ! ( ${PS} -o "command=" ${KVM_PID} | ${EGREP} qtap${stop_id} >/dev/null ); do
 	let "stop_id += 1"
 	# try qtap0 to qtap${MAX_VMS} for possible ${MAX_VMS} virtual maschines
 	if [ ${stop_id} -eq ${MAX_VMS} ]; then
