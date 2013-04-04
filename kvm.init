@@ -179,15 +179,15 @@ info(){
     # it seems that einfo cannot handle variable subtitutions
     # thus output the information with einfon and echo
     einfo "Information about: ${VM_NAME}"
-    einfo
+    echo
     einfo " VM started at: ${starttime}"
     einfo " Uptime: ${uptime}"
     einfo " PID: ${pid}"
-    einfo
+    echo
     einfo " Remote Access via: ${VM_REMOTE_ACCESS}"
     einfon " Ip/Port: "
     echo ${address_port#*:}
-    einfo
+    echo
     einfo " Network Typ: ${VM_NET_TYP}"
     einfo " qdap-device: ${qtap_dev}"
     einfon " MAC-Address: "
