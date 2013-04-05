@@ -40,6 +40,7 @@ NC="/usr/bin/nc"
 LS="/bin/ls"
 WC="/bin/wc"
 HEAD="/bin/head"
+GREP="/bin/grep"
 EGREP="/bin/egrep"
 NETSTAT="/bin/netstat"
 CUT="/bin/cut"
@@ -74,7 +75,7 @@ scan_running_vm(){
   local running_vm_pid
   for running_vm in ${PID_DIR}/*.pid; do
     running_vm_pid=`<${running_vm}`
-    if ( `${PS} -o "command=" ${running_vm_pid} | ${EGREP} "$1" > /dev/null 2>&1` ); then
+    if (`${PS} -o "command=" ${running_vm_pid} | ${EGREP} "$1" >/dev/null 2>&1`); then
       match_vm=`echo ${running_vm%.pid}`
       return 1
     fi
@@ -145,6 +146,9 @@ info(){
       local starttime=`${PS} -o "lstart=" ${pid}`
       if ( ${VM_HAVE_REOMTE_ACCESS} ); then
 	# echo ${address_port#*:} # to get the address:port
+	# echo "info spice" | nc --unix -q1 /var/run/kvm/berlix.sock 2>&1 | grep --only-matching --perl-regex "(?<=address\:).*[0-9]"
+	
+	# echo "info vnc" | nc --unix -q1 /var/run/kvm/gbaseppc.sock 2>&1 | grep --only-matching --perl-regex "(?<=address\:).*[0-9]"
 	if [ "${VM_REMOTE_ACCESS}" == "spice" ]; then
 	  local address_port="`echo "info spice" \
 	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
@@ -160,6 +164,7 @@ info(){
       
       if ! [ "${VM_NET_TYP}" == "none" ]; then
 	if [ "${VM_NET_TYP}" == "tap" ]; then
+	  #echo "info network" | nc --unix -q1 /var/run/kvm/berlix.sock 2>&1 | grep --only-matching --perl-regex "(?<=ifname\=).*[0-9]"
 	  local qtap_dev="`echo "info network" \
 	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
 	    | ${EGREP} ${VM_NAME} \
@@ -168,6 +173,7 @@ info(){
 	fi
 	if [ -z "${VM_MAC_ADDRESS}" ]; then
 	  # echo ${mac_addr##*=}
+	  # echo "info network" | nc --unix -q1 /var/run/kvm/berlix.sock 2>&1 | grep --only-matching --perl-regex "(?<=macaddr\=).*[a-fA-F0-9]"
 	  local mac_addr="`echo "info network" \
 	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
 	    | ${EGREP} macaddr`"
@@ -237,11 +243,11 @@ cfgcheck(){
     esac
   
   # remote access checks
-  if ( ${VM_HAVE_REOMTE_ACCESS} ); then
+  if (${VM_HAVE_REOMTE_ACCESS}); then
     # set listening ip
     if [ -z "${VM_REMOTE_ACCESS_LISTEN_IP}" ]; then
       VM_REMOTE_ACCESS_LISTEN_IP="`${IP} address show ${BRDEV} \
-	| ${EGREP} -o '[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}'\
+	| ${EGREP} -o '[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}' \
 	| ${HEAD} -n1`"
     fi
     # set port
@@ -249,7 +255,7 @@ cfgcheck(){
     # have to check with netstat if a port is free
     if [ -z "${VM_REMOTE_ACCESS_PORT}" ]; then
       local port_nr=0
-      while $(${NETSTAT} -nat | ${EGREP} "${VM_REMOTE_ACCESS_LISTEN_IP}:580${port_nr}[^0-9]" >/dev/null ); do
+      while $(${NETSTAT} -nat | ${EGREP} "${VM_REMOTE_ACCESS_LISTEN_IP}:580${port_nr}[^0-9]" >/dev/null); do
 	let "port_nr += 1"
       done
       VM_REMOTE_ACCESS_PORT="580${port_nr}"
@@ -272,7 +278,7 @@ cfgcheck(){
   fi
 
   # image checks/default settings
-  if ( ${VM_HAVE_HARDDISK} ); then
+  if (${VM_HAVE_HARDDISK}); then
     if [ -z "${VM_IMAGE}" ]; then
       eerror "No vm-image set. Please check your config (/etc/conf.d/kvm.${VM_NAME})"
       return 1
@@ -324,7 +330,7 @@ cfgcheck(){
     case ${VM_NET_TYP} in
       tap)
 	if [ -n "${BRDEV}" ]; then
-	  if ! ( ${IP} link show ${BRDEV} > /dev/null 2>&1 ); then
+	  if ! (${IP} link show ${BRDEV} > /dev/null 2>&1); then
 	    eerror "${BRDEV} dosen't exist. Please check your config (/etc/conf.d/kvm.${VM_NAME})"
 	    return 1
 	  fi
@@ -334,7 +340,7 @@ cfgcheck(){
 	fi
 	# get the guest_nummber for qtap...
 	start_id=0;
-	while ( ${BRCTL} show | ${EGREP} qtap${start_id} >/dev/null 2>&1 ); do
+	while (${BRCTL} show | ${EGREP} qtap${start_id} >/dev/null 2>&1); do
 	  let "start_id += 1"
 	done
 	# check for max_vms
@@ -352,7 +358,7 @@ cfgcheck(){
     esac
   fi
   
-  if ( ${VM_SNAPSHOTMODE} ); then
+  if (${VM_SNAPSHOTMODE}); then
     ewarn " ** SNAPSHOT MODE! Changes in the guest system won't be saved! **"
   fi
 }
@@ -380,19 +386,19 @@ myconfig(){
   fi
 
   # daemonize true/false
-  ( ${VM_DAEMONIZE} ) && myconfig="${myconfig} -daemonize"
+  (${VM_DAEMONIZE}) && myconfig="${myconfig} -daemonize"
   # snapshotmode on/off
-  ( ${VM_SNAPSHOTMODE} ) && myconfig="${myconfig} -snapshot"
+  (${VM_SNAPSHOTMODE}) && myconfig="${myconfig} -snapshot"
   # spice virtual serial port (copy/paste)
-  ( ${VM_HAVE_VIRTSERIAL} ) && myconfig="${myconfig} -device virtio-serial \
+  (${VM_HAVE_VIRTSERIAL}) && myconfig="${myconfig} -device virtio-serial \
     -chardev spicevmc,id=vdagent,name=vdagent \
     -device virtserialport,chardev=vdagent,name=com.redhat.spice.0"
   # qemu guest agent (qga)
-  ( ${VM_HAVE_QGA} ) && myconfig="${myconfig} -device virtio-serial \
+  (${VM_HAVE_QGA}) && myconfig="${myconfig} -device virtio-serial \
     -chardev socket,path=${PID_DIR}/${VM_NAME}-qga.sock,server,nowait,id=${VM_NAME}-qga \
     -device virtserialport,chardev=${VM_NAME}-qga,name=org.qemu.qga.0"
   # enable/disable harddisk
-  ( ${VM_HAVE_HARDDISK} ) && myconfig="${myconfig} \
+  (${VM_HAVE_HARDDISK}) && myconfig="${myconfig} \
     -drive file=${VM_IMAGE},if=${VM_IMG_IF},cache=${VM_IMG_CACHE},aio=${VM_IMG_AIO}"
 
   # network settings
@@ -412,7 +418,7 @@ myconfig(){
       ;;
   esac
   
-  if ( ${VM_HAVE_REOMTE_ACCESS} ); then
+  if (${VM_HAVE_REOMTE_ACCESS}); then
     case ${VM_REMOTE_ACCESS} in
       spice|SPICE)
 	VM_DISPLAY="qxl"
@@ -563,14 +569,14 @@ stop(){
 
   local KVM_PID=`<${PID_DIR}/${VM_NAME}.pid`
 
-  if ( ${PS} -p ${KVM_PID} --no-heading > /dev/null 2>&1 ); then
+  if ( ${PS} -p ${KVM_PID} --no-heading >/dev/null 2>&1); then
   
     # set VM_NET_TYP to none if the var is empty, otherwise the below test would fail if the var would be empty
     [ -z "${VM_NET_TYP}" ] && VM_NET_TYP="none"
     # find the next free qtap interface
     if [ ${VM_NET_TYP} == "tap" ]; then
       stop_id=0
-      while ! ( ${PS} -o "command=" ${KVM_PID} | ${EGREP} qtap${stop_id} >/dev/null ); do
+      while ! ( ${PS} -o "command=" ${KVM_PID} | ${EGREP} qtap${stop_id} >/dev/null); do
 	let "stop_id += 1"
 	# try qtap0 to qtap${MAX_VMS} for possible ${MAX_VMS} virtual maschines
 	if [ ${stop_id} -eq ${MAX_VMS} ]; then
