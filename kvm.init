@@ -180,6 +180,9 @@ info(){
     # it seems that einfo cannot handle variable subtitutions
     # thus output the information with einfon and echo
     einfo "Information about: ${VM_NAME}"
+    if ( ${VM_SNAPSHOTMODE} ); then
+      einfo " ** VM is running in SNAPSHOT mode! **"
+    fi
     echo
     einfo " VM started at: ${starttime}"
     einfo " Uptime: ${uptime}"
