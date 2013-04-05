@@ -135,8 +135,8 @@ info(){
     ewarn "not yet implemented"
   else
     # default settings
-    address_port="NONE"
-    qtap="NONE"
+    local address_port="NONE"
+    local qtap="NONE"
     
     # get the information
     if [ -e ${PID_DIR}/${VM_NAME}.pid ]; then
@@ -172,7 +172,7 @@ info(){
 	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
 	    | ${EGREP} macaddr`"
 	else
-	  mac_addr="${VM_MAC_ADDRESS}"
+	  local mac_addr="${VM_MAC_ADDRESS}"
 	fi
       fi
     fi
