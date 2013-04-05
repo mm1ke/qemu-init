@@ -250,7 +250,7 @@ cfgcheck(){
     if [ -z "${VM_REMOTE_ACCESS_PORT}" ]; then
       local port_nr=0
       while $(${NETSTAT} -nat | ${EGREP} "${VM_REMOTE_ACCESS_LISTEN_IP}:580${port_nr}[^0-9]" >/dev/null ); do
-	  let "port_nr += 1"
+	let "port_nr += 1"
       done
       VM_REMOTE_ACCESS_PORT="580${port_nr}"
     # check port if it was manuel set
@@ -282,8 +282,8 @@ cfgcheck(){
       if [ -e "${VM_IMAGE}/${VM_NAME}" ]; then
 	VM_IMAGE="${VM_IMAGE}/${VM_NAME}"
       elif [ `${LS} ${VM_IMAGE}${VM_NAME}[.]* | ${WC} -l` -gt 1 ]; then
-	  eerror "More than one possible guest vm images found. Please check your config (/etc/conf.d/kvm.${VM_NAME})"
-	  return 1
+	eerror "More than one possible guest vm images found. Please check your config (/etc/conf.d/kvm.${VM_NAME})"
+	return 1
       else
 	VM_IMAGE=`${LS} ${VM_IMAGE}/${VM_NAME}[.]*`
 	ewarn " VM-Image set to ${VM_IMAGE}"
@@ -365,9 +365,9 @@ myconfig(){
 
   # basic config
   myconfig="-name ${VM_NAME} \
-  -runas ${VM_USER} \
-  -monitor unix:${PID_DIR}/${VM_NAME}.sock,server,nowait \
-  -pidfile ${PID_DIR}/${VM_NAME}.pid "
+    -runas ${VM_USER} \
+    -monitor unix:${PID_DIR}/${VM_NAME}.sock,server,nowait \
+    -pidfile ${PID_DIR}/${VM_NAME}.pid "
   
   # if nothing is set, qemu defaults to 128mb memory and smp=1
   [ -z "${VM_MEMORY}" ] || myconfig="${myconfig} -m ${VM_MEMORY}"
@@ -385,27 +385,27 @@ myconfig(){
   ( ${VM_SNAPSHOTMODE} ) && myconfig="${myconfig} -snapshot"
   # spice virtual serial port (copy/paste)
   ( ${VM_HAVE_VIRTSERIAL} ) && myconfig="${myconfig} -device virtio-serial \
-  -chardev spicevmc,id=vdagent,name=vdagent \
-  -device virtserialport,chardev=vdagent,name=com.redhat.spice.0"
+    -chardev spicevmc,id=vdagent,name=vdagent \
+    -device virtserialport,chardev=vdagent,name=com.redhat.spice.0"
   # qemu guest agent (qga)
   ( ${VM_HAVE_QGA} ) && myconfig="${myconfig} -device virtio-serial \
-  -chardev socket,path=${PID_DIR}/${VM_NAME}-qga.sock,server,nowait,id=${VM_NAME}-qga \
-  -device virtserialport,chardev=${VM_NAME}-qga,name=org.qemu.qga.0"
+    -chardev socket,path=${PID_DIR}/${VM_NAME}-qga.sock,server,nowait,id=${VM_NAME}-qga \
+    -device virtserialport,chardev=${VM_NAME}-qga,name=org.qemu.qga.0"
   # enable/disable harddisk
   ( ${VM_HAVE_HARDDISK} ) && myconfig="${myconfig} \
-  -drive file=${VM_IMAGE},if=${VM_IMG_IF},cache=${VM_IMG_CACHE},aio=${VM_IMG_AIO}"
+    -drive file=${VM_IMAGE},if=${VM_IMG_IF},cache=${VM_IMG_CACHE},aio=${VM_IMG_AIO}"
 
   # network settings
   case ${VM_NET_TYP} in
     tap)
       myconfig="${myconfig} \
-      -netdev type=tap,id="${VM_NAME}_${start_id}",vhost=on,ifname=qtap${start_id},script=no,downscript=no \
-      -device ${VM_NET_DRV},netdev="${VM_NAME}_${start_id}",mac=${VM_MAC_ADDRESS}"
+	-netdev type=tap,id="${VM_NAME}_${start_id}",vhost=on,ifname=qtap${start_id},script=no,downscript=no \
+	-device ${VM_NET_DRV},netdev="${VM_NAME}_${start_id}",mac=${VM_MAC_ADDRESS}"
       ;;
     user)
       myconfig="${myconfig} \
-      -netdev type=user,id=${VM_NAME}_${start_id} \
-      -device ${VM_NET_DRV},netdev="${VM_NAME}_${start_id}",mac=${VM_MAC_ADDRESS}"
+	-netdev type=user,id=${VM_NAME}_${start_id} \
+	-device ${VM_NET_DRV},netdev="${VM_NAME}_${start_id}",mac=${VM_MAC_ADDRESS}"
       ;;
     none)
       myconfig="${myconfig} -net none"
