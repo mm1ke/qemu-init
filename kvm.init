@@ -145,13 +145,13 @@ info(){
       local starttime=`${PS} -o "lstart=" ${pid}`
       if ( ${VM_HAVE_REOMTE_ACCESS} ); then
 	if [ "${VM_REMOTE_ACCESS}" == "spice" ]; then
-	  local address_port="info spice" \
+	  local address_port=`echo "info spice" \
 	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-	    | ${GREP} --only-matching --perl-regex "(?<=address\:).*[0-9]"
+	    | ${GREP} --only-matching --perl-regex "(?<=address\:).*[0-9]"`
 	elif [ "${VM_REMOTE_ACCESS}" == "vnc" ]; then
-	  local address_port="info vnc" \
+	  local address_port=`echo "info vnc" \
 	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-	    | ${GREP} --only-matching --perl-regex "(?<=address\:).*[0-9]"
+	    | ${GREP} --only-matching --perl-regex "(?<=address\:).*[0-9]"`
 	else
 	  ewarn "${VM_REMOTE_ACCESS} not valid"
 	fi
@@ -159,14 +159,14 @@ info(){
       
       if ! [ "${VM_NET_TYP}" == "none" ]; then
 	if [ "${VM_NET_TYP}" == "tap" ]; then
-	  local qtap_dev="info network" \
+	  local qtap_dev=`echo "info network" \
 	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-	    | ${GREP} --only-matching --perl-regex "(?<=ifname\=).*[0-9]"
+	    | ${GREP} --only-matching --perl-regex "(?<=ifname\=).*[0-9]"`
 	fi
 	if [ -z "${VM_MAC_ADDRESS}" ]; then
-	  local mac_addr="info network" \
+	  local mac_addr=`echo "info network" \
 	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-	    | ${GREP} --only-matching --perl-regex "(?<=macaddr\=).*[a-fA-F0-9]"
+	    | ${GREP} --only-matching --perl-regex "(?<=macaddr\=).*[a-fA-F0-9]"`
 	else
 	  local mac_addr="${VM_MAC_ADDRESS}"
 	fi
