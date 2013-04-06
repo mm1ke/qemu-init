@@ -43,7 +43,6 @@ HEAD="/bin/head"
 GREP="/bin/grep"
 EGREP="/bin/egrep"
 NETSTAT="/bin/netstat"
-CUT="/bin/cut"
 MKDIR="/bin/mkdir"
 
 # PID dir
