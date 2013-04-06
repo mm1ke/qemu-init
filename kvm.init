@@ -145,18 +145,14 @@ info(){
       local uptime=`${PS} -o "etime=" ${pid}`
       local starttime=`${PS} -o "lstart=" ${pid}`
       if ( ${VM_HAVE_REOMTE_ACCESS} ); then
-	# echo ${address_port#*:} # to get the address:port
-	# echo "info spice" | nc --unix -q1 /var/run/kvm/berlix.sock 2>&1 | grep --only-matching --perl-regex "(?<=address\:).*[0-9]"
-	
-	# echo "info vnc" | nc --unix -q1 /var/run/kvm/gbaseppc.sock 2>&1 | grep --only-matching --perl-regex "(?<=address\:).*[0-9]"
 	if [ "${VM_REMOTE_ACCESS}" == "spice" ]; then
-	  local address_port="`echo "info spice" \
+	  local address_port="info spice" \
 	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-	    | ${EGREP} address`"
+	    | ${GREP} --only-matching --perl-regex "(?<=address\:).*[0-9]"
 	elif [ "${VM_REMOTE_ACCESS}" == "vnc" ]; then
-	  local address_port="`echo "info vnc" \
-	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock  2>&1 \
-	    | ${EGREP} address`"
+	  local address_port="info vnc" \
+	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
+	    | ${GREP} --only-matching --perl-regex "(?<=address\:).*[0-9]"
 	else
 	  ewarn "${VM_REMOTE_ACCESS} not valid"
 	fi
@@ -164,27 +160,20 @@ info(){
       
       if ! [ "${VM_NET_TYP}" == "none" ]; then
 	if [ "${VM_NET_TYP}" == "tap" ]; then
-	  #echo "info network" | nc --unix -q1 /var/run/kvm/berlix.sock 2>&1 | grep --only-matching --perl-regex "(?<=ifname\=).*[0-9]"
-	  local qtap_dev="`echo "info network" \
+	  local qtap_dev="info network" \
 	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-	    | ${EGREP} ${VM_NAME} \
-	    | ${CUT} -d ',' -f 2 \
-	    | ${CUT} -d '=' -f 2`"
+	    | ${GREP} --only-matching --perl-regex "(?<=ifname\=).*[0-9]"
 	fi
 	if [ -z "${VM_MAC_ADDRESS}" ]; then
-	  # echo ${mac_addr##*=}
-	  # echo "info network" | nc --unix -q1 /var/run/kvm/berlix.sock 2>&1 | grep --only-matching --perl-regex "(?<=macaddr\=).*[a-fA-F0-9]"
-	  local mac_addr="`echo "info network" \
+	  local mac_addr="info network" \
 	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-	    | ${EGREP} macaddr`"
+	    | ${GREP} --only-matching --perl-regex "(?<=macaddr\=).*[a-fA-F0-9]"
 	else
 	  local mac_addr="${VM_MAC_ADDRESS}"
 	fi
       fi
     fi
     
-    # it seems that einfo cannot handle variable subtitutions
-    # thus output the information with einfon and echo
     einfo "Information about: ${VM_NAME}"
     if ( ${VM_SNAPSHOTMODE} ); then
       einfo " ** VM is running in SNAPSHOT mode! **"
@@ -195,13 +184,11 @@ info(){
     einfo " PID: ${pid}"
     echo
     einfo " Remote Access via: ${VM_REMOTE_ACCESS}"
-    einfon " Ip/Port: "
-    echo ${address_port#*:}
+    einfo " Ip/Port: ${address_port}"
     echo
     einfo " Network Typ: ${VM_NET_TYP}"
     einfo " qdap-device: ${qtap_dev}"
-    einfon " MAC-Address: "
-    echo ${mac_addr##*=}
+    einfo " MAC-Address: ${mac_addr}"
     
   fi
 }
