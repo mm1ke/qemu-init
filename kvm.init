@@ -129,10 +129,69 @@ info(){
   # 	this however is not yet implemented. (see todo)
   # 	my plan is that if calling kvm.init directly, the script should output
   #	(if possibly in a nice form) information about ALL running vm's.
+  #
+  #	possible output:
+  
+  #	name	uptime(started @ starttime) (snapshotmode)
+  #	pid	mac	access	ip/port		type	qdapdev
+  #
 
   # TODO: implement kvm.init info
   if [ "$VM_NAME" == "init" ]; then
-    ewarn "not yet implemented"
+    einfo "VM Overview"
+    
+    shopt -s nullglob
+    for r_vm in ${PID_DIR}/*.pid; do
+      local pid=`<${r_vm}`
+      local uptime=`${PS} -o "etime=" ${pid}`
+      local starttime=`${PS} -o "lstart=" ${pid}`
+      VM_NAME=${r_vm/"${PID_DIR}/"/}
+      VM_NAME=${VM_NAME%.pid}
+
+      
+      if ( `${PS} -p ${pid} -f --no-heading | ${GREP} "spice" > /dev/null 2>&1` ); then
+	local VM_REMOTE_ACCESS="spice"
+	local address_port=`echo "info spice" \
+	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
+	    | ${GREP} --only-matching --perl-regex "(?<=address\:).*[0-9]"`
+      elif ( `${PS} -p ${pid} -f --no-heading | ${GREP} "vnc" > /dev/null 2>&1` ); then
+	local VM_REMOTE_ACCESS="vnc"
+	local address_port=`echo "info vnc" \
+	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
+	    | ${GREP} --only-matching --perl-regex "(?<=address\:).*[0-9]"`
+      else
+	local VM_REMOTE_ACCESS="NONE"
+	local address_port="NONE"
+      fi
+      local qtap_dev=`echo "info network" \
+	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
+	    | ${GREP} --only-matching --perl-regex "(?<=ifname\=).*[0-9]"`
+      
+      local mac_addr=`echo "info network" \
+	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
+	    | ${GREP} --only-matching --perl-regex "(?<=macaddr\=).*[a-fA-F0-9]"`
+	    
+      [ -z ${qtap_dev} ] && qtap_dev="NONE"
+      [ -z ${mac_addr} ] && mac_addr="NONE"
+      
+      if ( `${PS} -p ${pid} -f --no-heading | ${GREP} "snapshot" > /dev/null 2>&1` ); then
+	local snapshot="yes"
+      else
+	local snapshot="no"
+      fi
+      
+      
+      # needs better output
+      #echo -e "${r_vm}\t${VM_NET_TYP}\t${VM_REMOTE_ACCESS_PORT}\t${uptime#* }\t${VM_NAME%.pid}"
+      
+      echo -e " * ${VM_NAME} (PID:${pid})"
+      echo -e "   Snapshotmode: ${snapshot}\t${uptime} (started @ ${starttime})"
+      echo -e "   ${mac_addr}\t${VM_REMOTE_ACCESS} @ ${address_port} on ${qtap_dev}"
+      echo
+    done
+    shopt -u nullglob
+    
+    
   else
     # default settings
     local address_port="NONE"
