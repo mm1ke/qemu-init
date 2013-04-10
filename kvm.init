@@ -148,28 +148,30 @@ info(){
       VM_NAME=${r_vm/"${PID_DIR}/"/}
       VM_NAME=${VM_NAME%.pid}
 
-      
       if ( `${PS} -p ${pid} -f --no-heading | ${GREP} "spice" > /dev/null 2>&1` ); then
 	local VM_REMOTE_ACCESS="spice"
 	local address_port=`echo "info spice" \
-	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-	    | ${GREP} --only-matching --perl-regex "(?<=address\:).*[0-9]"`
+	  | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
+	  | ${GREP} --only-matching --perl-regex "(?<=address\:).*[0-9]" \
+	  | ${HEAD} -n1`
       elif ( `${PS} -p ${pid} -f --no-heading | ${GREP} "vnc" > /dev/null 2>&1` ); then
 	local VM_REMOTE_ACCESS="vnc"
 	local address_port=`echo "info vnc" \
-	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-	    | ${GREP} --only-matching --perl-regex "(?<=address\:).*[0-9]"`
+	  | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
+	  | ${GREP} --only-matching --perl-regex "(?<=address\:).*[0-9]" \
+	  | ${HEAD} -n1`
       else
 	local VM_REMOTE_ACCESS="NONE"
 	local address_port="NONE"
       fi
+      
       local qtap_dev=`echo "info network" \
-	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-	    | ${GREP} --only-matching --perl-regex "(?<=ifname\=).*[0-9]"`
+	| ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
+	| ${GREP} --only-matching --perl-regex "(?<=ifname\=).*[0-9]"`
       
       local mac_addr=`echo "info network" \
-	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-	    | ${GREP} --only-matching --perl-regex "(?<=macaddr\=).*[a-fA-F0-9]"`
+	| ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
+	| ${GREP} --only-matching --perl-regex "(?<=macaddr\=).*[a-fA-F0-9]"`
 	    
       [ -z ${qtap_dev} ] && qtap_dev="NONE"
       [ -z ${mac_addr} ] && mac_addr="NONE"
@@ -180,14 +182,11 @@ info(){
 	local snapshot="no"
       fi
       
-      
-      # needs better output
-      #echo -e "${r_vm}\t${VM_NET_TYP}\t${VM_REMOTE_ACCESS_PORT}\t${uptime#* }\t${VM_NAME%.pid}"
-      
       echo -e " * ${VM_NAME} (PID:${pid})"
       echo -e "   Snapshotmode: ${snapshot}\t${uptime} (started @ ${starttime})"
       echo -e "   ${mac_addr}\t${VM_REMOTE_ACCESS} @ ${address_port} on ${qtap_dev}"
       echo
+      
     done
     shopt -u nullglob
     
@@ -206,11 +205,13 @@ info(){
 	if [ "${VM_REMOTE_ACCESS}" == "spice" ]; then
 	  local address_port=`echo "info spice" \
 	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-	    | ${GREP} --only-matching --perl-regex "(?<=address\:).*[0-9]"`
+	    | ${GREP} --only-matching --perl-regex "(?<=address\:).*[0-9]" \
+	    | ${HEAD} -n1`
 	elif [ "${VM_REMOTE_ACCESS}" == "vnc" ]; then
 	  local address_port=`echo "info vnc" \
 	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-	    | ${GREP} --only-matching --perl-regex "(?<=address\:).*[0-9]"`
+	    | ${GREP} --only-matching --perl-regex "(?<=address\:).*[0-9]" \
+	    | ${HEAD} -n1`
 	else
 	  ewarn "${VM_REMOTE_ACCESS} not valid"
 	fi
