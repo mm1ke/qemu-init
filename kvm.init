@@ -472,6 +472,10 @@ myconfig(){
 	myconfig="${myconfig} -spice port=${VM_REMOTE_ACCESS_PORT},addr=${VM_REMOTE_ACCESS_LISTEN_IP},password=${VM_REMOTE_ACCESS_PW}"
 	;;
       vnc|VNC)
+	# reason for changing the port to such a strange number:
+	# https://bugs.gentoo.org/show_bug.cgi?id=461744
+	# https://bugs.launchpad.net/qemu/+bug/1089496
+	let VM_REMOTE_ACCESS_PORT="${VM_REMOTE_ACCESS_PORT} + 59635 - 65535"
 	myconfig="${myconfig} -vnc ${VM_REMOTE_ACCESS_LISTEN_IP}:${VM_REMOTE_ACCESS_PORT}"
 	;;
       *)
