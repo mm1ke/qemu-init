@@ -129,14 +129,7 @@ info(){
   # 	this however is not yet implemented. (see todo)
   # 	my plan is that if calling kvm.init directly, the script should output
   #	(if possibly in a nice form) information about ALL running vm's.
-  #
-  #	possible output:
-  
-  #	name	uptime(started @ starttime) (snapshotmode)
-  #	pid	mac	access	ip/port		type	qdapdev
-  #
 
-  # TODO: implement kvm.init info
   if [ "$VM_NAME" == "init" ]; then
     einfo "VM Overview"
     
