@@ -126,8 +126,7 @@ info(){
   # first: calling kvm.init with the vm-name (/etc/init.d/kvm.winxp info)
   # 	which would show information only about the vm "winxp"
   # secondly: calling kvm.init directly (/etc/init.d/kvm.init info)
-  # 	this however is not yet implemented. (see todo)
-  # 	my plan is that if calling kvm.init directly, the script should output
+  # 	calling kvm.init directly, the script should output
   #	(if possibly in a nice form) information about ALL running vm's.
 
   if [ "$VM_NAME" == "init" ]; then
