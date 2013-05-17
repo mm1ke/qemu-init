@@ -30,7 +30,7 @@ description_save="Saves the changes within a guest to the harddisk"
 description_tapdel="Deletes unused tap devices (like from a crashed guest)"
 description_info="Show information about a running vm"
 
-# programms - packages / depends
+# programs - packages / depends
 BRCTL="/sbin/brctl" # net-misc/bridge-utils
 IP="/bin/ip" # sys-apps/iproute2
 NC="/usr/bin/nc" # net-analyzer/netcat6
