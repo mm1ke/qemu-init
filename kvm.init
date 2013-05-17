@@ -30,20 +30,10 @@ description_save="Saves the changes within a guest to the harddisk"
 description_tapdel="Deletes unused tap devices (like from a crashed guest)"
 description_info="Show information about a running vm"
 
-# programms
-SLEEP="/usr/bin/sleep"
-RM="/bin/rm"
-PS="/bin/ps"
-BRCTL="/sbin/brctl"
-IP="/bin/ip"
-NC="/usr/bin/nc"
-LS="/bin/ls"
-WC="/bin/wc"
-HEAD="/bin/head"
-GREP="/bin/grep"
-EGREP="/bin/egrep"
-NETSTAT="/bin/netstat"
-MKDIR="/bin/mkdir"
+# programms - packages / depends
+BRCTL="/sbin/brctl" # net-misc/bridge-utils
+IP="/bin/ip" # sys-apps/iproute2
+NC="/usr/bin/nc" # net-analyzer/netcat6
 
 # PID dir
 PID_DIR="/var/run/kvm"
@@ -74,7 +64,7 @@ scan_running_vm(){
   local running_vm_pid
   for running_vm in ${PID_DIR}/*.pid; do
     running_vm_pid=`<${running_vm}`
-    if (`${PS} -o "command=" ${running_vm_pid} | ${EGREP} "$1" >/dev/null 2>&1`); then
+    if (`ps -o "command=" ${running_vm_pid} | egrep "$1" >/dev/null 2>&1`); then
       match_vm=`echo ${running_vm%.pid}`
       return 1
     fi
@@ -92,7 +82,7 @@ tapdel(){
   if [ -z "${BRDEV}" ]; then
     ewarn "No BRDEV is set in /etc/conf.d/kvm.${VM_NAME}"
   else
-    for active_qtap in `${BRCTL} show|${EGREP} qtap`; do
+    for active_qtap in `${BRCTL} show|egrep qtap`; do
       if scan_running_vm "ifname=${active_qtap}"; then
 	stop_id=${active_qtap:4}
 	stop_tap_device
@@ -135,23 +125,23 @@ info(){
     shopt -s nullglob
     for r_vm in ${PID_DIR}/*.pid; do
       local pid=`<${r_vm}`
-      local uptime=`${PS} -o "etime=" ${pid}`
-      local starttime=`${PS} -o "lstart=" ${pid}`
+      local uptime=`ps -o "etime=" ${pid}`
+      local starttime=`ps -o "lstart=" ${pid}`
       VM_NAME=${r_vm/"${PID_DIR}/"/}
       VM_NAME=${VM_NAME%.pid}
 
-      if ( `${PS} -p ${pid} -f --no-heading | ${GREP} "spice" > /dev/null 2>&1` ); then
+      if ( `ps -p ${pid} -f --no-heading | grep "spice" > /dev/null 2>&1` ); then
 	local VM_REMOTE_ACCESS="spice"
 	local address_port=`echo "info spice" \
 	  | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-	  | ${GREP} --only-matching --perl-regex "(?<=address\:).*[0-9]" \
-	  | ${HEAD} -n1`
-      elif ( `${PS} -p ${pid} -f --no-heading | ${GREP} "vnc" > /dev/null 2>&1` ); then
+	  | grep --only-matching --perl-regex "(?<=address\:).*[0-9]" \
+	  | head -n1`
+      elif ( `ps -p ${pid} -f --no-heading | grep "vnc" > /dev/null 2>&1` ); then
 	local VM_REMOTE_ACCESS="vnc"
 	local address_port=`echo "info vnc" \
 	  | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-	  | ${GREP} --only-matching --perl-regex "(?<=address\:).*[0-9]" \
-	  | ${HEAD} -n1`
+	  | grep --only-matching --perl-regex "(?<=address\:).*[0-9]" \
+	  | head -n1`
       else
 	local VM_REMOTE_ACCESS="NONE"
 	local address_port="NONE"
@@ -159,16 +149,16 @@ info(){
       
       local qtap_dev=`echo "info network" \
 	| ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-	| ${GREP} --only-matching --perl-regex "(?<=ifname\=).*[0-9]"`
+	| grep --only-matching --perl-regex "(?<=ifname\=).*[0-9]"`
       
       local mac_addr=`echo "info network" \
 	| ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-	| ${GREP} --only-matching --perl-regex "(?<=macaddr\=).*[a-fA-F0-9]"`
+	| grep --only-matching --perl-regex "(?<=macaddr\=).*[a-fA-F0-9]"`
 	    
       [ -z ${qtap_dev} ] && qtap_dev="NONE"
       [ -z ${mac_addr} ] && mac_addr="NONE"
       
-      if ( `${PS} -p ${pid} -f --no-heading | ${GREP} "snapshot" > /dev/null 2>&1` ); then
+      if ( `ps -p ${pid} -f --no-heading | grep "snapshot" > /dev/null 2>&1` ); then
 	local snapshot="yes"
       else
 	local snapshot="no"
@@ -191,19 +181,19 @@ info(){
     # get the information
     if [ -e ${PID_DIR}/${VM_NAME}.pid ]; then
       local pid=`<${PID_DIR}/${VM_NAME}.pid`
-      local uptime=`${PS} -o "etime=" ${pid}`
-      local starttime=`${PS} -o "lstart=" ${pid}`
+      local uptime=`ps -o "etime=" ${pid}`
+      local starttime=`ps -o "lstart=" ${pid}`
       if ( ${VM_HAVE_REOMTE_ACCESS} ); then
 	if [ "${VM_REMOTE_ACCESS}" == "spice" ]; then
 	  local address_port=`echo "info spice" \
 	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-	    | ${GREP} --only-matching --perl-regex "(?<=address\:).*[0-9]" \
-	    | ${HEAD} -n1`
+	    | grep --only-matching --perl-regex "(?<=address\:).*[0-9]" \
+	    | head -n1`
 	elif [ "${VM_REMOTE_ACCESS}" == "vnc" ]; then
 	  local address_port=`echo "info vnc" \
 	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-	    | ${GREP} --only-matching --perl-regex "(?<=address\:).*[0-9]" \
-	    | ${HEAD} -n1`
+	    | grep --only-matching --perl-regex "(?<=address\:).*[0-9]" \
+	    | head -n1`
 	else
 	  ewarn "${VM_REMOTE_ACCESS} not valid"
 	fi
@@ -213,12 +203,12 @@ info(){
 	if [ "${VM_NET_TYP}" == "tap" ]; then
 	  local qtap_dev=`echo "info network" \
 	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-	    | ${GREP} --only-matching --perl-regex "(?<=ifname\=).*[0-9]"`
+	    | grep --only-matching --perl-regex "(?<=ifname\=).*[0-9]"`
 	fi
 	if [ -z "${VM_MAC_ADDRESS}" ]; then
 	  local mac_addr=`echo "info network" \
 	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-	    | ${GREP} --only-matching --perl-regex "(?<=macaddr\=).*[a-fA-F0-9]"`
+	    | grep --only-matching --perl-regex "(?<=macaddr\=).*[a-fA-F0-9]"`
 	else
 	  local mac_addr="${VM_MAC_ADDRESS}"
 	fi
@@ -251,10 +241,10 @@ info(){
 cfgcheck(){
 
 # basic tests/settings
-  [ -d ${PID_DIR} ] || ${MKDIR} ${PID_DIR}
+  [ -d ${PID_DIR} ] || mkdir ${PID_DIR}
   [ -d ${TMP_DIR} ] || TMP_DIR="/var/tmp"
   
-  if ! [ `${EGREP} -i "^${VM_USER}" /etc/passwd` ]; then
+  if ! [ `egrep -i "^${VM_USER}" /etc/passwd` ]; then
     eerror "User \"${VM_USER}\" not found in /etc/passwd."
     return 1
   fi
@@ -285,20 +275,20 @@ cfgcheck(){
     # set listening ip
     if [ -z "${VM_REMOTE_ACCESS_LISTEN_IP}" ]; then
       VM_REMOTE_ACCESS_LISTEN_IP="`${IP} address show ${BRDEV} \
-	| ${EGREP} -o '[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}' \
-	| ${HEAD} -n1`"
+	| egrep -o '[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}' \
+	| head -n1`"
     fi
     # set port
     # i don't use scan_running_vm here because other programms could use those ports too...
     # have to check with netstat if a port is free
     if [ -z "${VM_REMOTE_ACCESS_PORT}" ]; then
       local port_nr=0
-      while $(${NETSTAT} -nat | ${EGREP} "${VM_REMOTE_ACCESS_LISTEN_IP}:580${port_nr}[^0-9]" >/dev/null); do
+      while $(netstat -nat | egrep "${VM_REMOTE_ACCESS_LISTEN_IP}:580${port_nr}[^0-9]" >/dev/null); do
 	let "port_nr += 1"
       done
       VM_REMOTE_ACCESS_PORT="580${port_nr}"
     # check port if it was manuel set
-    elif $(${NETSTAT} -nat | ${EGREP} "${VM_REMOTE_ACCESS_LISTEN_IP}:${VM_REMOTE_ACCESS_PORT}[^0-9]" >/dev/null); then
+    elif $(netstat -nat | egrep "${VM_REMOTE_ACCESS_LISTEN_IP}:${VM_REMOTE_ACCESS_PORT}[^0-9]" >/dev/null); then
       eerror "Port is already in use. Please choose an different one in /etc/conf.d/kvm.${VM_NAME}"
       return 1
     fi    
@@ -325,11 +315,11 @@ cfgcheck(){
     if [ -d "${VM_IMAGE}" ]; then
       if [ -e "${VM_IMAGE}/${VM_NAME}" ]; then
 	VM_IMAGE="${VM_IMAGE}/${VM_NAME}"
-      elif [ `${LS} ${VM_IMAGE}${VM_NAME}[.]* | ${WC} -l` -gt 1 ]; then
+      elif [ `ls ${VM_IMAGE}${VM_NAME}[.]* | wc -l` -gt 1 ]; then
 	eerror "More than one possible guest vm images found. Please check your config (/etc/conf.d/kvm.${VM_NAME})"
 	return 1
       else
-	VM_IMAGE=`${LS} ${VM_IMAGE}/${VM_NAME}[.]*`
+	VM_IMAGE=`ls ${VM_IMAGE}/${VM_NAME}[.]*`
 	ewarn " VM-Image set to ${VM_IMAGE}"
       fi
     elif ! [ -e "${VM_IMAGE}" ]; then
@@ -378,7 +368,7 @@ cfgcheck(){
 	fi
 	# get the guest_nummber for qtap...
 	start_id=0;
-	while (${BRCTL} show | ${EGREP} qtap${start_id} >/dev/null 2>&1); do
+	while (${BRCTL} show | egrep qtap${start_id} >/dev/null 2>&1); do
 	  let "start_id += 1"
 	done
 	# check for max_vms
@@ -536,7 +526,7 @@ stop_tap_device(){
   ${BRCTL} delif ${BRDEV} qtap${stop_id}
   eend $? "Failed to unlink the bridge interface to qtap${stop_id}"
 
-  ${SLEEP} 2
+  sleep 2
   einfo " Removing the tap interface: qtap${stop_id}"
   ${IP} tuntap del qtap${stop_id} mode tap
 }
@@ -611,14 +601,14 @@ stop(){
 
   local KVM_PID=`<${PID_DIR}/${VM_NAME}.pid`
 
-  if ( ${PS} -p ${KVM_PID} --no-heading >/dev/null 2>&1); then
+  if ( ps -p ${KVM_PID} --no-heading >/dev/null 2>&1); then
   
     # set VM_NET_TYP to none if the var is empty, otherwise the below test would fail if the var would be empty
     [ -z "${VM_NET_TYP}" ] && VM_NET_TYP="none"
     # find the next free qtap interface
     if [ ${VM_NET_TYP} == "tap" ]; then
       stop_id=0
-      while ! ( ${PS} -o "command=" ${KVM_PID} | ${EGREP} qtap${stop_id} >/dev/null); do
+      while ! ( ps -o "command=" ${KVM_PID} | egrep qtap${stop_id} >/dev/null); do
 	let "stop_id += 1"
 	# try qtap0 to qtap${MAX_VMS} for possible ${MAX_VMS} virtual maschines
 	if [ ${stop_id} -eq ${MAX_VMS} ]; then
@@ -636,7 +626,7 @@ stop(){
     
     einfon "Waiting \"$((VM_KILL_WAIT))\" seconds for ${VM_NAME} to shutdown ."
     for timer in `eval echo {1..$((VM_KILL_WAIT/2))}`; do
-      if [ -z "`${PS} -p ${KVM_PID} --no-heading`" ]; then
+      if [ -z "`ps -p ${KVM_PID} --no-heading`" ]; then
 	echo
 	einfo " Stopped ${VM_NAME}"
 	break
@@ -646,11 +636,11 @@ stop(){
 	eerror "Shuddown of ${VM_NAME} failed, will kill guest"
 	# kill qemu
 	kill -9 ${KVM_PID} > /dev/null 2>&1
-	${SLEEP} 2
+	sleep 2
 	ewarn " Killed ${VM_NAME}"
 	break
       fi
-      ${SLEEP} 2
+      sleep 2
       echo -n "."
     done
 
@@ -658,9 +648,9 @@ stop(){
     [ -z ${stop_id} ] || stop_tap_device
 
     # remove remaining files
-    ${RM} -rf ${PID_DIR}/${VM_NAME}.pid
-    ${RM} -rf ${PID_DIR}/${VM_NAME}.sock
-    ${RM} -rf ${PID_DIR}/${VM_NAME}-qga.sock
+    rm -rf ${PID_DIR}/${VM_NAME}.pid
+    rm -rf ${PID_DIR}/${VM_NAME}.sock
+    rm -rf ${PID_DIR}/${VM_NAME}-qga.sock
 
   else
     ewarn "Couldn't find the process for ${VM_NAME}, guest might already down."
