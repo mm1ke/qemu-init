@@ -183,7 +183,7 @@ info(){
       local pid=`<${PID_DIR}/${VM_NAME}.pid`
       local uptime=`ps -o "etime=" ${pid}`
       local starttime=`ps -o "lstart=" ${pid}`
-      if ( ${VM_HAVE_REOMTE_ACCESS} ); then
+      if ( ${VM_ENABLE_REOMTE_ACCESS} ); then
 	if [ "${VM_REMOTE_ACCESS}" == "spice" ]; then
 	  local address_port=`echo "info spice" \
 	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
@@ -216,7 +216,7 @@ info(){
     fi
     
     einfo "Information about: ${VM_NAME}"
-    if ( ${VM_SNAPSHOTMODE} ); then
+    if ( ${VM_ENABLE_SNAPSHOTMODE} ); then
       einfo " ** VM is running in SNAPSHOT mode! **"
     fi
     echo
@@ -276,7 +276,7 @@ cfgcheck(){
     esac
   
   # remote access checks
-  if (${VM_HAVE_REOMTE_ACCESS}); then
+  if (${VM_ENABLE_REOMTE_ACCESS}); then
     # set listening ip
     if [ -z "${VM_REMOTE_ACCESS_LISTEN_IP}" ]; then
       VM_REMOTE_ACCESS_LISTEN_IP="`${IP} address show ${BRDEV} \
@@ -311,7 +311,7 @@ cfgcheck(){
   fi
 
   # image checks/default settings
-  if (${VM_HAVE_HARDDISK}); then
+  if (${VM_ENABLE_HARDDISK}); then
     if [ -z "${VM_IMAGE}" ]; then
       eerror "No vm-image set. Please check your config (/etc/conf.d/kvm.${VM_NAME})"
       return 1
@@ -391,7 +391,7 @@ cfgcheck(){
     esac
   fi
   
-  if (${VM_SNAPSHOTMODE}); then
+  if (${VM_ENABLE_SNAPSHOTMODE}); then
     ewarn " ** SNAPSHOT MODE! Changes in the guest system won't be saved! **"
   fi
 }
@@ -423,19 +423,19 @@ myconfig(){
   # enable/disable kvm
   (${VM_ENABLE_KVM}) && myconfig="${myconfig} -enable-kvm"
   # daemonize true/false
-  (${VM_DAEMONIZE}) && myconfig="${myconfig} -daemonize"
+  (${VM_ENABLE_DAEMONIZE}) && myconfig="${myconfig} -daemonize"
   # snapshotmode on/off
-  (${VM_SNAPSHOTMODE}) && myconfig="${myconfig} -snapshot"
+  (${VM_ENABLE_SNAPSHOTMODE}) && myconfig="${myconfig} -snapshot"
   # spice virtual serial port (copy/paste)
-  (${VM_HAVE_VIRTSERIAL}) && myconfig="${myconfig} -device virtio-serial \
+  (${VM_ENABLE_VIRTSERIAL}) && myconfig="${myconfig} -device virtio-serial \
     -chardev spicevmc,id=vdagent,name=vdagent \
     -device virtserialport,chardev=vdagent,name=com.redhat.spice.0"
   # qemu guest agent (qga)
-  (${VM_HAVE_QGA}) && myconfig="${myconfig} -device virtio-serial \
+  (${VM_ENABLE_QGA}) && myconfig="${myconfig} -device virtio-serial \
     -chardev socket,path=${PID_DIR}/${VM_NAME}-qga.sock,server,nowait,id=${VM_NAME}-qga \
     -device virtserialport,chardev=${VM_NAME}-qga,name=org.qemu.qga.0"
   # enable/disable harddisk
-  (${VM_HAVE_HARDDISK}) && myconfig="${myconfig} \
+  (${VM_ENABLE_HARDDISK}) && myconfig="${myconfig} \
     -drive file=${VM_IMAGE},if=${VM_IMG_IF},cache=${VM_IMG_CACHE},aio=${VM_IMG_AIO}"
 
   # network settings
@@ -455,7 +455,7 @@ myconfig(){
       ;;
   esac
   
-  if (${VM_HAVE_REOMTE_ACCESS}); then
+  if (${VM_ENABLE_REOMTE_ACCESS}); then
     case ${VM_REMOTE_ACCESS} in
       spice|SPICE)
 	VM_DISPLAY="qxl"
