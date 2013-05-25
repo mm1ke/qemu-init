@@ -255,6 +255,11 @@ cfgcheck(){
     VM_KERNEL=""
   fi
 
+  # guest wont start with "host" cpu if kvm is disabled
+  if [ "$VM_CPU" == "host" ]; then
+    VM_ENABLE_KVM="true"
+  fi
+  
   # arch spezific configuration
   case ${VM_ARCH} in
     arm)
@@ -407,12 +412,16 @@ myconfig(){
   [ -z "${VM_MEMORY}" ] || myconfig="${myconfig} -m ${VM_MEMORY}"
   [ -z "${VM_SMP}" ] || myconfig="${myconfig} -smp ${VM_SMP}"
   [ -z "${VM_MACHINE}" ] || myconfig="${myconfig} -machine ${VM_MACHINE}"
-
+  [ -z "${VM_LC}" ] || myconfig="${myconfig} -k ${VM_LC}"
+  [ -z "${VM_CPU}" ] || myconfig="${myconfig} -cpu ${VM_CPU}"
+  
   if [ -n "${VM_KERNEL}" ]; then
     myconfig="${myconfig} -kernel ${VM_KERNEL} -initrd ${VM_INITRD}"
     [ -z "${VM_APPEND}" ] || myconfig="${myconfig} -append \"${VM_APPEND}\""
   fi
-
+  
+  # enable/disable kvm
+  (${VM_ENABLE_KVM}) && myconfig="${myconfig} -enable-kvm"
   # daemonize true/false
   (${VM_DAEMONIZE}) && myconfig="${myconfig} -daemonize"
   # snapshotmode on/off
@@ -469,8 +478,6 @@ myconfig(){
     myconfig="${myconfig} -nographic"
   fi
 
-  [ -z "${VM_LC}" ] || myconfig="${myconfig} -k ${VM_LC}"
-  [ -z "${VM_CPU}" ] || myconfig="${myconfig} -cpu ${VM_CPU}"
   [ -z "${VM_USB}" ] || myconfig="${myconfig} -usb ${VM_USB}"
   [ -z "${VM_DISPLAY}" ] || myconfig="${myconfig} -vga ${VM_DISPLAY}"
   [ -z "${VM_AUDIO}" ] || myconfig="${myconfig} -soundhw ${VM_AUDIO}"
