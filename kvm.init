@@ -46,6 +46,7 @@ MAX_VMS=30
 DEBUG=false
 
 VM_NAME=${RC_SVCNAME#*.}
+CONF_PATH="/etc/conf.d/kvm.${VM_NAME}"
 #
 # depend()
 # custom depends
@@ -80,7 +81,7 @@ tapdel(){
   local active_qtap
   # BRDEV must be set in kvm.$vmname
   if [ -z "${BRDEV}" ]; then
-    ewarn "No BRDEV is set in /etc/conf.d/kvm.${VM_NAME}"
+    ewarn "No BRDEV is set in ${CONF_PATH}"
   else
     for active_qtap in `${BRCTL} show|egrep qtap`; do
       if scan_running_vm "ifname=${active_qtap}"; then
@@ -294,7 +295,7 @@ cfgcheck(){
       VM_REMOTE_ACCESS_PORT="580${port_nr}"
     # check port if it was manuel set
     elif $(netstat -nat | egrep "${VM_REMOTE_ACCESS_LISTEN_IP}:${VM_REMOTE_ACCESS_PORT}[^0-9]" >/dev/null); then
-      eerror "Port is already in use. Please choose an different one in /etc/conf.d/kvm.${VM_NAME}"
+      eerror "Port is already in use. Please choose an different one in ${CONF_PATH}"
       return 1
     fi    
   else
@@ -305,7 +306,7 @@ cfgcheck(){
   # cdrom checks
   if ! [ -z "${VM_CDROM}" ]; then
     if ! [ -e "${VM_CDROM}" ]; then
-      eerror "Image dosn't exist. Please check your config (/etc/conf.d/kvm.${VM_NAME})"
+      eerror "Image dosn't exist. Please check your config (${CONF_PATH})"
       return 1
     fi
   fi
@@ -313,7 +314,7 @@ cfgcheck(){
   # image checks/default settings
   if (${VM_ENABLE_HARDDISK}); then
     if [ -z "${VM_IMAGE}" ]; then
-      eerror "No vm-image set. Please check your config (/etc/conf.d/kvm.${VM_NAME})"
+      eerror "No vm-image set. Please check your config (${CONF_PATH})"
       return 1
     fi
 
@@ -321,14 +322,14 @@ cfgcheck(){
       if [ -e "${VM_IMAGE}/${VM_NAME}" ]; then
 	VM_IMAGE="${VM_IMAGE}/${VM_NAME}"
       elif [ `ls ${VM_IMAGE}${VM_NAME}[.]* | wc -l` -gt 1 ]; then
-	eerror "More than one possible guest vm images found. Please check your config (/etc/conf.d/kvm.${VM_NAME})"
+	eerror "More than one possible guest vm images found. Please check your config (${CONF_PATH})"
 	return 1
       else
 	VM_IMAGE=`ls ${VM_IMAGE}/${VM_NAME}[.]*`
 	ewarn " VM-Image set to ${VM_IMAGE}"
       fi
     elif ! [ -e "${VM_IMAGE}" ]; then
-      eerror "VM-Image not found. Please check your config (/etc/conf.d/kvm.${VM_NAME})"
+      eerror "VM-Image not found. Please check your config (${CONF_PATH})"
       return 1
     fi
     # check if image is already running
@@ -364,11 +365,11 @@ cfgcheck(){
       tap)
 	if [ -n "${BRDEV}" ]; then
 	  if ! (${IP} link show ${BRDEV} > /dev/null 2>&1); then
-	    eerror "${BRDEV} dosen't exist. Please check your config (/etc/conf.d/kvm.${VM_NAME})"
+	    eerror "${BRDEV} dosen't exist. Please check your config (${CONF_PATH})"
 	    return 1
 	  fi
 	else
-	  eerror "You need a bridge device! Please check your config (/etc/conf.d/kvm.${VM_NAME})"
+	  eerror "You need a bridge device! Please check your config (${CONF_PATH})"
 	  return 1
 	fi
 	# get the guest_nummber for qtap...
