@@ -60,17 +60,19 @@ depend(){
 # checks other vms
 #
 scan_running_vm(){
-  shopt -s nullglob
+  #shopt -s nullglob
   local running_vm
   local running_vm_pid
   for running_vm in ${PID_DIR}/*.pid; do
-    running_vm_pid=`<${running_vm}`
-    if (`ps -o "command=" ${running_vm_pid} | egrep "$1" >/dev/null 2>&1`); then
-      match_vm=`echo ${running_vm%.pid}`
-      return 1
-    fi
+  if [ -e ${running_vm} ]; then
+    	running_vm_pid=`<${running_vm}`
+    	if (`ps -o "command=" ${running_vm_pid} | egrep "$1" >/dev/null 2>&1`); then
+    	  match_vm=`echo ${running_vm%.pid}`
+    	  return 1
+    	fi
+  fi
   done
-  shopt -u nullglob
+  #shopt -u nullglob
 }
 
 #
@@ -120,58 +122,59 @@ info(){
   # 	calling kvm.init directly, the script should output
   #	(if possibly in a nice form) information about ALL running vm's.
 
-  if [ "$VM_NAME" == "init" ]; then
+  if [ "$VM_NAME" = "init" ]; then
     einfo "VM Overview"
     
-    shopt -s nullglob
+    #shopt -s nullglob
     for r_vm in ${PID_DIR}/*.pid; do
-      local pid=`<${r_vm}`
-      local uptime=`ps -o "etime=" ${pid}`
-      local starttime=`ps -o "lstart=" ${pid}`
-      VM_NAME=${r_vm/"${PID_DIR}/"/}
-      VM_NAME=${VM_NAME%.pid}
+      if [ -e ${r_vm} ]; then
+      	local pid=`<${r_vm}`
+      	local uptime=`ps -o "etime=" ${pid}`
+      	local starttime=`ps -o "lstart=" ${pid}`
+      	VM_NAME=${r_vm/"${PID_DIR}/"/}
+      	VM_NAME=${VM_NAME%.pid}
 
-      if ( `ps -p ${pid} -f --no-heading | grep "spice" > /dev/null 2>&1` ); then
-	local VM_REMOTE_ACCESS="spice"
-	local address_port=`echo "info spice" \
-	  | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-	  | grep --only-matching --perl-regex "(?<=address\:).*[0-9]" \
-	  | head -n1`
-      elif ( `ps -p ${pid} -f --no-heading | grep "vnc" > /dev/null 2>&1` ); then
-	local VM_REMOTE_ACCESS="vnc"
-	local address_port=`echo "info vnc" \
-	  | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-	  | grep --only-matching --perl-regex "(?<=address\:).*[0-9]" \
-	  | head -n1`
-      else
-	local VM_REMOTE_ACCESS="NONE"
-	local address_port="NONE"
-      fi
-      
-      local qtap_dev=`echo "info network" \
-	| ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-	| grep --only-matching --perl-regex "(?<=ifname\=).*[0-9]"`
-      
-      local mac_addr=`echo "info network" \
-	| ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-	| grep --only-matching --perl-regex "(?<=macaddr\=).*[a-fA-F0-9]"`
-	    
-      [ -z ${qtap_dev} ] && qtap_dev="NONE"
-      [ -z ${mac_addr} ] && mac_addr="NONE"
-      
-      if ( `ps -p ${pid} -f --no-heading | grep "snapshot" > /dev/null 2>&1` ); then
-	local snapshot="yes"
-      else
-	local snapshot="no"
-      fi
-      
-      echo -e " * ${VM_NAME} (PID:${pid})"
-      echo -e "   Snapshotmode: ${snapshot}\t${uptime} (started @ ${starttime})"
-      echo -e "   ${mac_addr}\t${VM_REMOTE_ACCESS} @ ${address_port} on ${qtap_dev}"
-      echo
-      
+      	if ( `ps -p ${pid} -f --no-heading | grep "spice" > /dev/null 2>&1` ); then
+      	  local VM_REMOTE_ACCESS="spice"
+      	  local address_port=`echo "info spice" \
+      	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
+      	    | grep --only-matching --perl-regex "(?<=address\:).*[0-9]" \
+      	    | head -n1`
+      	elif ( `ps -p ${pid} -f --no-heading | grep "vnc" > /dev/null 2>&1` ); then
+      	  local VM_REMOTE_ACCESS="vnc"
+      	  local address_port=`echo "info vnc" \
+      	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
+      	    | grep --only-matching --perl-regex "(?<=address\:).*[0-9]" \
+      	    | head -n1`
+      	else
+      	  local VM_REMOTE_ACCESS="NONE"
+      	  local address_port="NONE"
+      	fi
+      	
+      	local qtap_dev=`echo "info network" \
+      	  | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
+      	  | grep --only-matching --perl-regex "(?<=ifname\=).*[0-9]"`
+      	
+      	local mac_addr=`echo "info network" \
+      	  | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
+      	  | grep --only-matching --perl-regex "(?<=macaddr\=).*[a-fA-F0-9]"`
+      	      
+      	[ -z ${qtap_dev} ] && qtap_dev="NONE"
+      	[ -z ${mac_addr} ] && mac_addr="NONE"
+      	
+      	if ( `ps -p ${pid} -f --no-heading | grep "snapshot" > /dev/null 2>&1` ); then
+      	  local snapshot="yes"
+      	else
+      	  local snapshot="no"
+      	fi
+      	
+      	echo -e " * ${VM_NAME} (PID:${pid})"
+      	echo -e "   Snapshotmode: ${snapshot}\t${uptime} (started @ ${starttime})"
+      	echo -e "   ${mac_addr}\t${VM_REMOTE_ACCESS} @ ${address_port} on ${qtap_dev}"
+      	echo
+      fi  
     done
-    shopt -u nullglob
+    #shopt -u nullglob
     
     
   else
@@ -185,12 +188,12 @@ info(){
       local uptime=`ps -o "etime=" ${pid}`
       local starttime=`ps -o "lstart=" ${pid}`
       if ( ${VM_ENABLE_REOMTE_ACCESS} ); then
-	if [ "${VM_REMOTE_ACCESS}" == "spice" ]; then
+	if [ "${VM_REMOTE_ACCESS}" = "spice" ]; then
 	  local address_port=`echo "info spice" \
 	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
 	    | grep --only-matching --perl-regex "(?<=address\:).*[0-9]" \
 	    | head -n1`
-	elif [ "${VM_REMOTE_ACCESS}" == "vnc" ]; then
+	elif [ "${VM_REMOTE_ACCESS}" = "vnc" ]; then
 	  local address_port=`echo "info vnc" \
 	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
 	    | grep --only-matching --perl-regex "(?<=address\:).*[0-9]" \
@@ -200,8 +203,8 @@ info(){
 	fi
       fi
       
-      if ! [ "${VM_NET_TYP}" == "none" ]; then
-	if [ "${VM_NET_TYP}" == "tap" ]; then
+      if ! [ "${VM_NET_TYP}" = "none" ]; then
+	if [ "${VM_NET_TYP}" = "tap" ]; then
 	  local qtap_dev=`echo "info network" \
 	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
 	    | grep --only-matching --perl-regex "(?<=ifname\=).*[0-9]"`
@@ -257,7 +260,7 @@ cfgcheck(){
   fi
 
   # guest wont start with "host" cpu if kvm is disabled
-  if [ "$VM_CPU" == "host" ]; then
+  if [ "$VM_CPU" = "host" ]; then
     VM_ENABLE_KVM="true"
   fi
   
@@ -443,12 +446,12 @@ myconfig(){
   case ${VM_NET_TYP} in
     tap)
       myconfig="${myconfig} \
-	-netdev type=tap,id="${VM_NAME}_${start_id}",vhost=on,ifname=qtap${start_id},script=no,downscript=no \
+	-netdev tap,id="${VM_NAME}_${start_id}",vhost=on,ifname=qtap${start_id},script=no,downscript=no \
 	-device ${VM_NET_DRV},netdev="${VM_NAME}_${start_id}",mac=${VM_MAC_ADDRESS}"
       ;;
     user)
       myconfig="${myconfig} \
-	-netdev type=user,id=${VM_NAME}_${start_id} \
+	-netdev user,id=${VM_NAME}_${start_id} \
 	-device ${VM_NET_DRV},netdev="${VM_NAME}_${start_id}",mac=${VM_MAC_ADDRESS}"
       ;;
     none)
@@ -548,9 +551,9 @@ start(){
 
   # Test if requested arch is available in qemu
   # defaulting to system arch
-  [[ ! -n ${VM_ARCH} ]] && VM_ARCH=$(uname -m)
-  if $(type -P qemu-system-${VM_ARCH} &>/dev/null); then
-    qemu_bin=$(type -P qemu-system-${VM_ARCH})
+  ! [ -n ${VM_ARCH} ] && VM_ARCH=$(uname -m)
+  if command -v qemu-system-${VM_ARCH} > /dev/null ; then
+    qemu_bin="/usr/bin/qemu-system-${VM_ARCH}"
   else
     eerror "No support of ${VM_ARCH} in your qemu installation"
     exit 1
@@ -558,7 +561,7 @@ start(){
 
   cfgcheck || return 1
   myconfig || return 1
-  [ ${VM_NET_TYP} == "tap" ] && start_tap_device
+  [ ${VM_NET_TYP} = "tap" ] && start_tap_device
 
   ebegin "Start ${VM_NAME}"
 
@@ -581,11 +584,11 @@ start(){
     full config: ${myconfig}"
 
   # Start the Virtual Machine
-  TMPDIR="${TMP_DIR}" ${qemu_bin} ${myconfig} >/dev/null 2>&1
+  TMPDIR="${TMP_DIR}" ${qemu_bin} ${myconfig} >/dev/null
 
   # remove tap devices if the guest system couldn't be started
-  if (( $? )); then
-    if [ ${VM_NET_TYP} == "tap" ]; then
+  if [ "$?" != "0" ]; then
+    if [ ${VM_NET_TYP} = "tap" ]; then
       eerror "Failed to start ${VM_NAME}, shuting down qtap${start_id}"
       stop_id=${start_id}
       stop_tap_device || return 1
@@ -614,7 +617,7 @@ stop(){
     # set VM_NET_TYP to none if the var is empty, otherwise the below test would fail if the var would be empty
     [ -z "${VM_NET_TYP}" ] && VM_NET_TYP="none"
     # find the next free qtap interface
-    if [ ${VM_NET_TYP} == "tap" ]; then
+    if [ ${VM_NET_TYP} = "tap" ]; then
       stop_id=0
       while ! ( ps -o "command=" ${KVM_PID} | egrep qtap${stop_id} >/dev/null); do
 	let "stop_id += 1"
