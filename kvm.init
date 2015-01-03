@@ -34,9 +34,7 @@ BRCTL="/sbin/brctl" # net-misc/bridge-utils
 IP="/bin/ip" # sys-apps/iproute2
 NC="/usr/bin/nc" # net-analyzer/netcat6
 
-# PID dir
 PID_DIR="/var/run/kvm"
-# TMP dir
 TMP_DIR="/var/tmp"
 # max supported vms
 MAX_VMS=30
@@ -46,10 +44,7 @@ DEBUG=false
 
 VM_NAME=${RC_SVCNAME#*.}
 CONF_PATH="/etc/conf.d/kvm.${VM_NAME}"
-#
-# depend()
-# custom depends
-#
+
 depend(){
   need net
 }
@@ -215,7 +210,6 @@ info(){
     einfo " Network Typ: ${VM_NET_TYP}"
     einfo " qdap-device: ${qtap_dev}"
     einfo " MAC-Address: ${mac_addr}"
-    
   fi
 }
 
