@@ -26,7 +26,6 @@
 extra_commands="tapdel info"
 
 description="Start Qemu guests"
-description_save="Saves the changes within a guest to the harddisk"
 description_tapdel="Deletes unused tap devices (like from a crashed guest)"
 description_info="Show information about a running vm"
 
@@ -90,21 +89,6 @@ tapdel(){
       fi
     done
   fi
-}
-
-#
-# save()
-# save changes within a guest
-#
-save(){
-  ewarn "Command is disabled right now"
-  #echo "commit all" | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
-
-  # link to the bugreport:
-  # https://bugs.launchpad.net/qemu/+bug/1067517
-  # last test:
-  # app-emulation/qemu-1.2.2-r2 - dont work
-
 }
 
 #
