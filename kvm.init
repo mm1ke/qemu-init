@@ -57,8 +57,8 @@ scan_running_vm(){
   local running_vm,running_vm_pid
 
   for running_vm in ${PID_DIR}/*.pid; do
-  if [ -e ${running_vm} ]; then
-    	running_vm_pid=`<${running_vm}`
+  if [ -e "${running_vm}" ]; then
+    	running_vm_pid="`cat ${running_vm}`"
     	if (`ps -o "command=" ${running_vm_pid} | egrep "$1" >/dev/null 2>&1`); then
     	  match_vm=`echo ${running_vm%.pid}`
     	  return 1
@@ -105,36 +105,36 @@ info(){
     
     for r_vm in ${PID_DIR}/*.pid; do
       if [ -e ${r_vm} ]; then
-      	local pid=`<${r_vm}`
-      	local uptime=`ps -o "etime=" ${pid}`
-      	local starttime=`ps -o "lstart=" ${pid}`
-      	VM_NAME=${r_vm/"${PID_DIR}/"/}
+      	local pid="`cat ${r_vm}`"
+      	local uptime="`ps -o "etime=" ${pid}`"
+      	local starttime="`ps -o "lstart=" ${pid}`"
+      	VM_NAME="`echo ${r_vm}|sed "s|"${PID_DIR}/"||g"`"
       	VM_NAME=${VM_NAME%.pid}
 
       	if ( `ps -p ${pid} -f --no-heading | grep "spice" > /dev/null 2>&1` ); then
       	  local VM_REMOTE_ACCESS="spice"
-      	  local address_port=`echo "info spice" \
+      	  local address_port="`echo "info spice" \
       	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
       	    | grep --only-matching --perl-regex "(?<=address\:).*[0-9]" \
-      	    | head -n1`
+      	    | head -n1`"
       	elif ( `ps -p ${pid} -f --no-heading | grep "vnc" > /dev/null 2>&1` ); then
       	  local VM_REMOTE_ACCESS="vnc"
-      	  local address_port=`echo "info vnc" \
+      	  local address_port="`echo "info vnc" \
       	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
       	    | grep --only-matching --perl-regex "(?<=address\:).*[0-9]" \
-      	    | head -n1`
+      	    | head -n1`"
       	else
       	  local VM_REMOTE_ACCESS="NONE"
       	  local address_port="NONE"
       	fi
       	
-      	local qtap_dev=`echo "info network" \
+      	local qtap_dev="`echo "info network" \
       	  | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-      	  | grep --only-matching --perl-regex "(?<=ifname\=).*[0-9]"`
+      	  | grep --only-matching --perl-regex "(?<=ifname\=).*[0-9]"`"
       	
-      	local mac_addr=`echo "info network" \
+      	local mac_addr="`echo "info network" \
       	  | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-      	  | grep --only-matching --perl-regex "(?<=macaddr\=).*[a-fA-F0-9]"`
+      	  | grep --only-matching --perl-regex "(?<=macaddr\=).*[a-fA-F0-9]"`"
       	      
       	[ -z ${qtap_dev} ] && qtap_dev="NONE"
       	[ -z ${mac_addr} ] && mac_addr="NONE"
@@ -145,9 +145,10 @@ info(){
       	  local snapshot="no"
       	fi
       	
-      	echo -e " * ${VM_NAME} (PID:${pid})"
-      	echo -e "   Snapshotmode: ${snapshot}\t${uptime} (started @ ${starttime})"
-      	echo -e "   ${mac_addr}\t${VM_REMOTE_ACCESS} @ ${address_port} on ${qtap_dev}"
+      	einfo " * ${VM_NAME} (PID:${pid})"
+      	einfo "   Snapshotmode: ${snapshot}"
+	einfo "   Uptime: ${uptime} (started @ ${starttime})"
+	einfo "   Network: ${VM_REMOTE_ACCESS} @${address_port} (${mac_addr}) on ${qtap_dev}"
       	echo
       fi  
     done
@@ -160,20 +161,20 @@ info(){
     
     # get the information
     if [ -e ${PID_DIR}/${VM_NAME}.pid ]; then
-      local pid=`<${PID_DIR}/${VM_NAME}.pid`
-      local uptime=`ps -o "etime=" ${pid}`
-      local starttime=`ps -o "lstart=" ${pid}`
+      local pid="`cat ${PID_DIR}/${VM_NAME}.pid`"
+      local uptime="`ps -o "etime=" ${pid}`"
+      local starttime="`ps -o "lstart=" ${pid}`"
       if ( ${VM_ENABLE_REOMTE_ACCESS} ); then
 	if [ "${VM_REMOTE_ACCESS}" = "spice" ]; then
-	  local address_port=`echo "info spice" \
+	  local address_port="`echo "info spice" \
 	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
 	    | grep --only-matching --perl-regex "(?<=address\:).*[0-9]" \
-	    | head -n1`
+	    | head -n1`"
 	elif [ "${VM_REMOTE_ACCESS}" = "vnc" ]; then
-	  local address_port=`echo "info vnc" \
+	  local address_port="`echo "info vnc" \
 	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
 	    | grep --only-matching --perl-regex "(?<=address\:).*[0-9]" \
-	    | head -n1`
+	    | head -n1`"
 	else
 	  ewarn "${VM_REMOTE_ACCESS} not valid"
 	fi
@@ -181,14 +182,14 @@ info(){
       
       if ! [ "${VM_NET_TYP}" = "none" ]; then
 	if [ "${VM_NET_TYP}" = "tap" ]; then
-	  local qtap_dev=`echo "info network" \
+	  local qtap_dev="`echo "info network" \
 	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-	    | grep --only-matching --perl-regex "(?<=ifname\=).*[0-9]"`
+	    | grep --only-matching --perl-regex "(?<=ifname\=).*[0-9]"`"
 	fi
 	if [ -z "${VM_MAC_ADDRESS}" ]; then
-	  local mac_addr=`echo "info network" \
+	  local mac_addr="`echo "info network" \
 	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-	    | grep --only-matching --perl-regex "(?<=macaddr\=).*[a-fA-F0-9]"`
+	    | grep --only-matching --perl-regex "(?<=macaddr\=).*[a-fA-F0-9]"`"
 	else
 	  local mac_addr="${VM_MAC_ADDRESS}"
 	fi
@@ -585,7 +586,7 @@ stop(){
     VM_KILL_WAIT=80
   fi
 
-  local KVM_PID=`<${PID_DIR}/${VM_NAME}.pid`
+  local KVM_PID="`cat ${PID_DIR}/${VM_NAME}.pid`"
 
   if ( ps -p ${KVM_PID} --no-heading >/dev/null 2>&1); then
   
