@@ -46,7 +46,7 @@ VM_NAME=${RC_SVCNAME#*.}
 CONF_PATH="/etc/conf.d/kvm.${VM_NAME}"
 
 depend(){
-  need net
+	need net
 }
 
 #
@@ -54,17 +54,17 @@ depend(){
 # checks other vms
 #
 scan_running_vm(){
-  local running_vm,running_vm_pid
+	local running_vm,running_vm_pid
 
-  for running_vm in ${PID_DIR}/*.pid; do
-  if [ -e "${running_vm}" ]; then
-    	running_vm_pid="`cat ${running_vm}`"
-    	if (`ps -o "command=" ${running_vm_pid} | egrep "$1" >/dev/null 2>&1`); then
-    	  match_vm=`echo ${running_vm%.pid}`
-    	  return 1
-    	fi
-  fi
-  done
+	for running_vm in ${PID_DIR}/*.pid; do
+	if [ -e "${running_vm}" ]; then
+		running_vm_pid="`cat ${running_vm}`"
+		if (`ps -o "command=" ${running_vm_pid} | egrep "$1" >/dev/null 2>&1`); then
+			match_vm=`echo ${running_vm%.pid}`
+			return 1
+		fi
+	fi
+	done
 }
 
 #
@@ -72,18 +72,18 @@ scan_running_vm(){
 # removes unused tap devices
 #
 tapdel(){
-  local active_qtap
-  # BRDEV must be set in kvm.$vmname
-  if [ -z "${BRDEV}" ]; then
-    ewarn "No BRDEV is set in ${CONF_PATH}"
-  else
-    for active_qtap in `${BRCTL} show|egrep qtap`; do
-      if scan_running_vm "ifname=${active_qtap}"; then
-	stop_id=${active_qtap:4}
-	stop_tap_device
-      fi
-    done
-  fi
+	local active_qtap
+	# BRDEV must be set in kvm.$vmname
+	if [ -z "${BRDEV}" ]; then
+		ewarn "No BRDEV is set in ${CONF_PATH}"
+	else
+		for active_qtap in `${BRCTL} show|egrep qtap`; do
+			if scan_running_vm "ifname=${active_qtap}"; then
+				stop_id=${active_qtap:4}
+				stop_tap_device
+			fi
+		done
+	fi
 }
 
 #
@@ -91,127 +91,125 @@ tapdel(){
 # get information about running vms
 #
 info(){
+	# there are two possibilities how to run this command:
+	# first: calling kvm.init with the vm-name (/etc/init.d/kvm.winxp info)
+	#	which would show information only about the vm "winxp"
+	# secondly: calling kvm.init directly (/etc/init.d/kvm.init info)
+	#	calling kvm.init directly, the script should output
+	#	(if possibly in a nice form) information about ALL running vm's.
 
-  # there are two possibilities how to run this command:
-  # first: calling kvm.init with the vm-name (/etc/init.d/kvm.winxp info)
-  # 	which would show information only about the vm "winxp"
-  # secondly: calling kvm.init directly (/etc/init.d/kvm.init info)
-  # 	calling kvm.init directly, the script should output
-  #	(if possibly in a nice form) information about ALL running vm's.
+	if [ "$VM_NAME" = "init" ]; then
+		einfo "VM Overview"
+		local r_vm
 
-  if [ "$VM_NAME" = "init" ]; then
-    einfo "VM Overview"
-    local r_vm
-    
-    for r_vm in ${PID_DIR}/*.pid; do
-      if [ -e ${r_vm} ]; then
-      	local pid="`cat ${r_vm}`"
-      	local uptime="`ps -o "etime=" ${pid}`"
-      	local starttime="`ps -o "lstart=" ${pid}`"
-      	VM_NAME="`echo ${r_vm}|sed "s|"${PID_DIR}/"||g"`"
-      	VM_NAME=${VM_NAME%.pid}
+		for r_vm in ${PID_DIR}/*.pid; do
+			if [ -e ${r_vm} ]; then
+				local pid="`cat ${r_vm}`"
+				local uptime="`ps -o "etime=" ${pid}`"
+				local starttime="`ps -o "lstart=" ${pid}`"
+				VM_NAME="`echo ${r_vm}|sed "s|"${PID_DIR}/"||g"`"
+				VM_NAME=${VM_NAME%.pid}
 
-      	if ( `ps -p ${pid} -f --no-heading | grep "spice" > /dev/null 2>&1` ); then
-      	  local VM_REMOTE_ACCESS="spice"
-      	  local address_port="`echo "info spice" \
-      	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-      	    | grep --only-matching --perl-regex "(?<=address\:).*[0-9]" \
-      	    | head -n1`"
-      	elif ( `ps -p ${pid} -f --no-heading | grep "vnc" > /dev/null 2>&1` ); then
-      	  local VM_REMOTE_ACCESS="vnc"
-      	  local address_port="`echo "info vnc" \
-      	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-      	    | grep --only-matching --perl-regex "(?<=address\:).*[0-9]" \
-      	    | head -n1`"
-      	else
-      	  local VM_REMOTE_ACCESS="NONE"
-      	  local address_port="NONE"
-      	fi
-      	
-      	local qtap_dev="`echo "info network" \
-      	  | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-      	  | grep --only-matching --perl-regex "(?<=ifname\=).*[0-9]"`"
-      	
-      	local mac_addr="`echo "info network" \
-      	  | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-      	  | grep --only-matching --perl-regex "(?<=macaddr\=).*[a-fA-F0-9]"`"
-      	      
-      	[ -z ${qtap_dev} ] && qtap_dev="NONE"
-      	[ -z ${mac_addr} ] && mac_addr="NONE"
-      	
-      	if ( `ps -p ${pid} -f --no-heading | grep "snapshot" > /dev/null 2>&1` ); then
-      	  local snapshot="yes"
-      	else
-      	  local snapshot="no"
-      	fi
-      	
-      	einfo " * ${VM_NAME} (PID:${pid})"
-      	einfo "   Snapshotmode: ${snapshot}"
-	einfo "   Uptime: ${uptime} (started @ ${starttime})"
-	einfo "   Network: ${VM_REMOTE_ACCESS} @${address_port} (${mac_addr}) on ${qtap_dev}"
-      	echo
-      fi  
-    done
-    
-    
-  else
-    # default settings
-    local address_port="NONE"
-    local qtap="NONE"
-    
-    # get the information
-    if [ -e ${PID_DIR}/${VM_NAME}.pid ]; then
-      local pid="`cat ${PID_DIR}/${VM_NAME}.pid`"
-      local uptime="`ps -o "etime=" ${pid}`"
-      local starttime="`ps -o "lstart=" ${pid}`"
-      if ( ${VM_ENABLE_REOMTE_ACCESS} ); then
-	if [ "${VM_REMOTE_ACCESS}" = "spice" ]; then
-	  local address_port="`echo "info spice" \
-	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-	    | grep --only-matching --perl-regex "(?<=address\:).*[0-9]" \
-	    | head -n1`"
-	elif [ "${VM_REMOTE_ACCESS}" = "vnc" ]; then
-	  local address_port="`echo "info vnc" \
-	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-	    | grep --only-matching --perl-regex "(?<=address\:).*[0-9]" \
-	    | head -n1`"
+				if ( `ps -p ${pid} -f --no-heading | grep "spice" > /dev/null 2>&1` ); then
+					local VM_REMOTE_ACCESS="spice"
+					local address_port="`echo "info spice" \
+						| ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
+						| grep --only-matching --perl-regex "(?<=address\:).*[0-9]" \
+						| head -n1`"
+				elif ( `ps -p ${pid} -f --no-heading | grep "vnc" > /dev/null 2>&1` ); then
+					local VM_REMOTE_ACCESS="vnc"
+					local address_port="`echo "info vnc" \
+						| ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
+						| grep --only-matching --perl-regex "(?<=address\:).*[0-9]" \
+						| head -n1`"
+				else
+					local VM_REMOTE_ACCESS="NONE"
+					local address_port="NONE"
+				fi
+
+				local qtap_dev="`echo "info network" \
+					| ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
+					| grep --only-matching --perl-regex "(?<=ifname\=).*[0-9]"`"
+				
+				local mac_addr="`echo "info network" \
+					| ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
+					| grep --only-matching --perl-regex "(?<=macaddr\=).*[a-fA-F0-9]"`"
+
+				[ -z ${qtap_dev} ] && qtap_dev="NONE"
+				[ -z ${mac_addr} ] && mac_addr="NONE"
+
+				if ( `ps -p ${pid} -f --no-heading | grep "snapshot" > /dev/null 2>&1` ); then
+					local snapshot="yes"
+				else
+					local snapshot="no"
+				fi
+
+				einfo " * ${VM_NAME} (PID:${pid})"
+				einfo "   Snapshotmode: ${snapshot}"
+				einfo "   Uptime: ${uptime} (started @ ${starttime})"
+				einfo "   Network: ${VM_REMOTE_ACCESS} @${address_port} (${mac_addr}) on ${qtap_dev}"
+				echo
+
+			fi
+		done
 	else
-	  ewarn "${VM_REMOTE_ACCESS} not valid"
+		# default settings
+		local address_port="NONE"
+		local qtap="NONE"
+
+		# get the information
+		if [ -e ${PID_DIR}/${VM_NAME}.pid ]; then
+			local pid="`cat ${PID_DIR}/${VM_NAME}.pid`"
+			local uptime="`ps -o "etime=" ${pid}`"
+			local starttime="`ps -o "lstart=" ${pid}`"
+			if ( ${VM_ENABLE_REOMTE_ACCESS} ); then
+				if [ "${VM_REMOTE_ACCESS}" = "spice" ]; then
+					local address_port="`echo "info spice" \
+						| ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
+						| grep --only-matching --perl-regex "(?<=address\:).*[0-9]" \
+						| head -n1`"
+				elif [ "${VM_REMOTE_ACCESS}" = "vnc" ]; then
+					local address_port="`echo "info vnc" \
+						| ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
+						| grep --only-matching --perl-regex "(?<=address\:).*[0-9]" \
+						| head -n1`"
+				else
+					ewarn "${VM_REMOTE_ACCESS} not valid"
+				fi
+			fi
+
+			if ! [ "${VM_NET_TYP}" = "none" ]; then
+				if [ "${VM_NET_TYP}" = "tap" ]; then
+					local qtap_dev="`echo "info network" \
+						| ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
+						| grep --only-matching --perl-regex "(?<=ifname\=).*[0-9]"`"
+				fi
+				if [ -z "${VM_MAC_ADDRESS}" ]; then
+					local mac_addr="`echo "info network" \
+						| ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
+						| grep --only-matching --perl-regex "(?<=macaddr\=).*[a-fA-F0-9]"`"
+				else
+					local mac_addr="${VM_MAC_ADDRESS}"
+				fi
+			fi
+		fi
+
+		einfo "Information about: ${VM_NAME}"
+		if ( ${VM_ENABLE_SNAPSHOTMODE} ); then
+			einfo " ** VM is running in SNAPSHOT mode! **"
+		fi
+		echo
+		einfo " VM started at: ${starttime}"
+		einfo " Uptime: ${uptime}"
+		einfo " PID: ${pid}"
+		echo
+		einfo " Remote Access via: ${VM_REMOTE_ACCESS}"
+		einfo " Ip/Port: ${address_port}"
+		echo
+		einfo " Network Typ: ${VM_NET_TYP}"
+		einfo " qdap-device: ${qtap_dev}"
+		einfo " MAC-Address: ${mac_addr}"
 	fi
-      fi
-      
-      if ! [ "${VM_NET_TYP}" = "none" ]; then
-	if [ "${VM_NET_TYP}" = "tap" ]; then
-	  local qtap_dev="`echo "info network" \
-	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-	    | grep --only-matching --perl-regex "(?<=ifname\=).*[0-9]"`"
-	fi
-	if [ -z "${VM_MAC_ADDRESS}" ]; then
-	  local mac_addr="`echo "info network" \
-	    | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock 2>&1 \
-	    | grep --only-matching --perl-regex "(?<=macaddr\=).*[a-fA-F0-9]"`"
-	else
-	  local mac_addr="${VM_MAC_ADDRESS}"
-	fi
-      fi
-    fi
-    
-    einfo "Information about: ${VM_NAME}"
-    if ( ${VM_ENABLE_SNAPSHOTMODE} ); then
-      einfo " ** VM is running in SNAPSHOT mode! **"
-    fi
-    echo
-    einfo " VM started at: ${starttime}"
-    einfo " Uptime: ${uptime}"
-    einfo " PID: ${pid}"
-    echo
-    einfo " Remote Access via: ${VM_REMOTE_ACCESS}"
-    einfo " Ip/Port: ${address_port}"
-    echo
-    einfo " Network Typ: ${VM_NET_TYP}"
-    einfo " qdap-device: ${qtap_dev}"
-    einfo " MAC-Address: ${mac_addr}"
-  fi
 }
 
 #
@@ -220,160 +218,160 @@ info(){
 #
 cfgcheck(){
 
-# basic tests/settings
-  [ -d ${PID_DIR} ] || mkdir ${PID_DIR}
-  [ -d ${TMP_DIR} ] || TMP_DIR="/var/tmp"
-  
-  if ! [ `egrep -i "^${VM_USER}" /etc/passwd` ]; then
-    eerror "User \"${VM_USER}\" not found in /etc/passwd."
-    return 1
-  fi
+	# basic tests/settings
+	[ -d ${PID_DIR} ] || mkdir ${PID_DIR}
+	[ -d ${TMP_DIR} ] || TMP_DIR="/var/tmp"
 
-  if [ -n "${VM_KERNEL}" ] && [ -n "${VM_INITRD}" ]; then
-    VM_BOOT_DEV=""
-  else
-    VM_KERNEL=""
-  fi
+	if ! [ `egrep -i "^${VM_USER}" /etc/passwd` ]; then
+		eerror "User \"${VM_USER}\" not found in /etc/passwd."
+		return 1
+	fi
 
-  # guest wont start with "host" cpu if kvm is disabled
-  if [ "$VM_CPU" = "host" ]; then
-    VM_ENABLE_KVM="true"
-  fi
-  
-  # arch spezific configuration
-  case ${VM_ARCH} in
-    arm)
-      # arm has only smc91c111 - see qemu-system-arm -net nic,model=?
-      VM_NET_DRV="smc91c111"
-      ;;
-    mips)
-      # mips only supports up to 256mb ram
-      if [ ${VM_MEMORY} -gt 256 ]; then
-	VM_MEMORY=256
-	ewarn " ** MIPS only supports up to 256MB ram"
-      fi
-      ;;
-    esac
-  
-  # remote access checks
-  if (${VM_ENABLE_REOMTE_ACCESS}); then
-    # set listening ip
-    if [ -z "${VM_REMOTE_ACCESS_LISTEN_IP}" ]; then
-      VM_REMOTE_ACCESS_LISTEN_IP="`${IP} address show ${BRDEV} \
-	| egrep -o '[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}' \
-	| head -n1`"
-    fi
-    # set port
-    # i don't use scan_running_vm here because other programms could use those ports too...
-    # have to check with netstat if a port is free
-    if [ -z "${VM_REMOTE_ACCESS_PORT}" ]; then
-      local port_nr=0
-      while $(netstat -nat | egrep "${VM_REMOTE_ACCESS_LISTEN_IP}:580${port_nr}[^0-9]" >/dev/null); do
-	let "port_nr += 1"
-      done
-      VM_REMOTE_ACCESS_PORT="580${port_nr}"
-    # check port if it was manuel set
-    elif $(netstat -nat | egrep "${VM_REMOTE_ACCESS_LISTEN_IP}:${VM_REMOTE_ACCESS_PORT}[^0-9]" >/dev/null); then
-      eerror "Port is already in use. Please choose an different one in ${CONF_PATH}"
-      return 1
-    fi    
-  else
-    ewarn " Remote access disabled"
-    VM_DISPLAY=""
-  fi
-
-  # cdrom checks
-  if ! [ -z "${VM_CDROM}" ]; then
-    if ! [ -e "${VM_CDROM}" ]; then
-      eerror "Image dosn't exist. Please check your config (${CONF_PATH})"
-      return 1
-    fi
-  fi
-
-  # image checks/default settings
-  if (${VM_ENABLE_HARDDISK}); then
-    if [ -z "${VM_IMAGE}" ]; then
-      eerror "No vm-image set. Please check your config (${CONF_PATH})"
-      return 1
-    fi
-
-    if [ -d "${VM_IMAGE}" ]; then
-      if [ -e "${VM_IMAGE}/${VM_NAME}" ]; then
-	VM_IMAGE="${VM_IMAGE}/${VM_NAME}"
-      elif [ `ls ${VM_IMAGE}${VM_NAME}[.]* | wc -l` -gt 1 ]; then
-	eerror "More than one possible guest vm images found. Please check your config (${CONF_PATH})"
-	return 1
-      else
-	VM_IMAGE=`ls ${VM_IMAGE}/${VM_NAME}[.]*`
-	ewarn " VM-Image set to ${VM_IMAGE}"
-      fi
-    elif ! [ -e "${VM_IMAGE}" ]; then
-      eerror "VM-Image not found. Please check your config (${CONF_PATH})"
-      return 1
-    fi
-    # check if image is already running
-    if ! scan_running_vm "${VM_IMAGE}"; then
-      eerror "This vm-image is already started by \"/etc/init.d/kvm.${match_vm##*/}\"!"
-      return 1
-    fi
-    # set default settings for hd if nothing is set
-    [ -z "${VM_IMG_CACHE}" ] && VM_IMG_CACHE="none"
-    [ -z "${VM_IMG_IF}" ] && VM_IMG_IF="ide"
-    [ -z "${VM_IMG_AIO}" ] && VM_IMG_AIO="threads"
-  fi
-
-  # network checks/default settings
-  if [ -z "${VM_NET_TYP}" ]; then
-    VM_NET_TYP="none"
-  else
-    # set default network driver
-    [ -z "${VM_NET_DRV}" ] && VM_NET_DRV="rtl8139"
-    # check for mac address
-    if ! [ -z "${VM_MAC_ADDRESS}" ]; then
-      if ! scan_running_vm "${VM_MAC_ADDRESS}"; then
-	eerror "MAC-address already used by \"/etc/init.d/kvm.${match_vm##*/}\"!"
-	return 1
-      fi
-    else
-      # set random mac address
-      VM_MAC_ADDRESS=`printf 'DE:AD:CA:5E:%02X:%02X\n' $((RANDOM%256)) $((RANDOM%256))`
-      ewarn " ** RANDOM MAC ADDRESS! Address will be lost on shutdown! **"
-    fi
-
-    case ${VM_NET_TYP} in
-      tap)
-	if [ -n "${BRDEV}" ]; then
-	  if ! (${IP} link show ${BRDEV} > /dev/null 2>&1); then
-	    eerror "${BRDEV} dosen't exist. Please check your config (${CONF_PATH})"
-	    return 1
-	  fi
+	if [ -n "${VM_KERNEL}" ] && [ -n "${VM_INITRD}" ]; then
+		VM_BOOT_DEV=""
 	else
-	  eerror "You need a bridge device! Please check your config (${CONF_PATH})"
-	  return 1
+		VM_KERNEL=""
 	fi
-	# get the guest_nummber for qtap...
-	start_id=0;
-	while (${BRCTL} show | egrep qtap${start_id} >/dev/null 2>&1); do
-	  let "start_id += 1"
-	done
-	# check for max_vms
-	if [ ${start_id} -ge ${MAX_VMS} ]; then
-	  eerror "Maximum number of vm's reached. Please increase the MAX_VMS variable."
-	  return 1
+
+	# guest wont start with "host" cpu if kvm is disabled
+	if [ "$VM_CPU" = "host" ]; then
+		VM_ENABLE_KVM="true"
 	fi
-	;;
-      user|none)
-	;;
-      *)
-	ewarn "** Unknow Network Typ. Network will be disabled"
-	VM_NET_TYP="none"
-	;;
-    esac
-  fi
-  
-  if (${VM_ENABLE_SNAPSHOTMODE}); then
-    ewarn " ** SNAPSHOT MODE! Changes in the guest system won't be saved! **"
-  fi
+
+	# arch spezific configuration
+	case ${VM_ARCH} in
+		arm)
+			# arm has only smc91c111 - see qemu-system-arm -net nic,model=?
+			VM_NET_DRV="smc91c111"
+			;;
+		mips)
+			# mips only supports up to 256mb ram
+			if [ ${VM_MEMORY} -gt 256 ]; then
+				VM_MEMORY=256
+				ewarn " ** MIPS only supports up to 256MB ram"
+			fi
+			;;
+	esac
+
+	# remote access checks
+	if (${VM_ENABLE_REOMTE_ACCESS}); then
+		# set listening ip
+		if [ -z "${VM_REMOTE_ACCESS_LISTEN_IP}" ]; then
+			VM_REMOTE_ACCESS_LISTEN_IP="`${IP} address show ${BRDEV} \
+				| egrep -o '[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}' \
+				| head -n1`"
+		fi
+		# set port
+		# i don't use scan_running_vm here because other programms could use those ports too...
+		# have to check with netstat if a port is free
+		if [ -z "${VM_REMOTE_ACCESS_PORT}" ]; then
+			local port_nr=0
+			while $(netstat -nat | egrep "${VM_REMOTE_ACCESS_LISTEN_IP}:580${port_nr}[^0-9]" >/dev/null); do
+				let "port_nr += 1"
+			done
+			VM_REMOTE_ACCESS_PORT="580${port_nr}"
+		# check port if it was manuel set
+		elif $(netstat -nat | egrep "${VM_REMOTE_ACCESS_LISTEN_IP}:${VM_REMOTE_ACCESS_PORT}[^0-9]" >/dev/null); then
+			eerror "Port is already in use. Please choose an different one in ${CONF_PATH}"
+			return 1
+	fi
+	else
+		ewarn " Remote access disabled"
+		VM_DISPLAY=""
+	fi
+	
+	# cdrom checks
+	if ! [ -z "${VM_CDROM}" ]; then
+		if ! [ -e "${VM_CDROM}" ]; then
+			eerror "Image dosn't exist. Please check your config (${CONF_PATH})"
+			return 1
+		fi
+	fi
+	
+	# image checks/default settings
+	if (${VM_ENABLE_HARDDISK}); then
+		if [ -z "${VM_IMAGE}" ]; then
+			eerror "No vm-image set. Please check your config (${CONF_PATH})"
+			return 1
+		fi
+
+		if [ -d "${VM_IMAGE}" ]; then
+			if [ -e "${VM_IMAGE}/${VM_NAME}" ]; then
+				VM_IMAGE="${VM_IMAGE}/${VM_NAME}"
+			elif [ `ls ${VM_IMAGE}${VM_NAME}[.]* | wc -l` -gt 1 ]; then
+				eerror "More than one possible guest vm images found. Please check your config (${CONF_PATH})"
+				return 1
+			else
+				VM_IMAGE=`ls ${VM_IMAGE}/${VM_NAME}[.]*`
+				ewarn " VM-Image set to ${VM_IMAGE}"
+			fi
+		elif ! [ -e "${VM_IMAGE}" ]; then
+			eerror "VM-Image not found. Please check your config (${CONF_PATH})"
+			return 1
+		fi
+		# check if image is already running
+		if ! scan_running_vm "${VM_IMAGE}"; then
+			eerror "This vm-image is already started by \"/etc/init.d/kvm.${match_vm##*/}\"!"
+			return 1
+		fi
+		# set default settings for hd if nothing is set
+		[ -z "${VM_IMG_CACHE}" ] && VM_IMG_CACHE="none"
+		[ -z "${VM_IMG_IF}" ] && VM_IMG_IF="ide"
+		[ -z "${VM_IMG_AIO}" ] && VM_IMG_AIO="threads"
+	fi
+
+	# network checks/default settings
+	if [ -z "${VM_NET_TYP}" ]; then
+		VM_NET_TYP="none"
+	else
+		# set default network driver
+		[ -z "${VM_NET_DRV}" ] && VM_NET_DRV="rtl8139"
+		# check for mac address
+		if ! [ -z "${VM_MAC_ADDRESS}" ]; then
+			if ! scan_running_vm "${VM_MAC_ADDRESS}"; then
+				eerror "MAC-address already used by \"/etc/init.d/kvm.${match_vm##*/}\"!"
+				return 1
+			fi
+		else
+			# set random mac address
+			VM_MAC_ADDRESS=`printf 'DE:AD:CA:5E:%02X:%02X\n' $((RANDOM%256)) $((RANDOM%256))`
+			ewarn " ** RANDOM MAC ADDRESS! Address will be lost on shutdown! **"
+		fi
+
+		case ${VM_NET_TYP} in
+			tap)
+				if [ -n "${BRDEV}" ]; then
+					if ! (${IP} link show ${BRDEV} > /dev/null 2>&1); then
+						eerror "${BRDEV} dosen't exist. Please check your config (${CONF_PATH})"
+						return 1
+					fi
+				else
+					eerror "You need a bridge device! Please check your config (${CONF_PATH})"
+					return 1
+				fi
+				# get the guest_nummber for qtap...
+				start_id=0;
+				while (${BRCTL} show | egrep qtap${start_id} >/dev/null 2>&1); do
+					let "start_id += 1"
+				done
+				# check for max_vms
+				if [ ${start_id} -ge ${MAX_VMS} ]; then
+					eerror "Maximum number of vm's reached. Please increase the MAX_VMS variable."
+					return 1
+				fi
+				;;
+			user|none)
+				;;
+			*)
+				ewarn "** Unknow Network Typ. Network will be disabled"
+				VM_NET_TYP="none"
+				;;
+		esac
+	fi
+
+	if (${VM_ENABLE_SNAPSHOTMODE}); then
+		ewarn " ** SNAPSHOT MODE! Changes in the guest system won't be saved! **"
+	fi
 }
 
 #
@@ -382,107 +380,107 @@ cfgcheck(){
 #
 myconfig(){
 
-  # basic config
-  myconfig="-name ${VM_NAME} \
-    -runas ${VM_USER} \
-    -monitor unix:${PID_DIR}/${VM_NAME}.sock,server,nowait \
-    -pidfile ${PID_DIR}/${VM_NAME}.pid "
-  
-  # if nothing is set, qemu defaults to 128mb memory and smp=1
-  [ -z "${VM_MEMORY}" ] || myconfig="${myconfig} -m ${VM_MEMORY}"
-  [ -z "${VM_SMP}" ] || myconfig="${myconfig} -smp ${VM_SMP}"
-  [ -z "${VM_MACHINE}" ] || myconfig="${myconfig} -machine ${VM_MACHINE}"
-  [ -z "${VM_LC}" ] || myconfig="${myconfig} -k ${VM_LC}"
-  [ -z "${VM_CPU}" ] || myconfig="${myconfig} -cpu ${VM_CPU}"
-  
-  if [ -n "${VM_KERNEL}" ]; then
-    myconfig="${myconfig} -kernel ${VM_KERNEL} -initrd ${VM_INITRD}"
-    [ -z "${VM_APPEND}" ] || myconfig="${myconfig} -append \"${VM_APPEND}\""
-  fi
-  
-  # enable/disable kvm
-  (${VM_ENABLE_KVM}) && myconfig="${myconfig} -enable-kvm"
-  # daemonize true/false
-  (${VM_ENABLE_DAEMONIZE}) && myconfig="${myconfig} -daemonize"
-  # snapshotmode on/off
-  (${VM_ENABLE_SNAPSHOTMODE}) && myconfig="${myconfig} -snapshot"
-  # spice virtual serial port (copy/paste)
-  (${VM_ENABLE_VIRTSERIAL}) && myconfig="${myconfig} -device virtio-serial \
-    -chardev spicevmc,id=vdagent,name=vdagent \
-    -device virtserialport,chardev=vdagent,name=com.redhat.spice.0"
-  # qemu guest agent (qga)
-  (${VM_ENABLE_QGA}) && myconfig="${myconfig} -device virtio-serial \
-    -chardev socket,path=${PID_DIR}/${VM_NAME}-qga.sock,server,nowait,id=${VM_NAME}-qga \
-    -device virtserialport,chardev=${VM_NAME}-qga,name=org.qemu.qga.0"
-  # enable/disable harddisk
-  (${VM_ENABLE_HARDDISK}) && myconfig="${myconfig} \
-    -drive file=${VM_IMAGE},if=${VM_IMG_IF},cache=${VM_IMG_CACHE},aio=${VM_IMG_AIO}"
+	# basic config
+	myconfig="-name ${VM_NAME} \
+		-runas ${VM_USER} \
+		-monitor unix:${PID_DIR}/${VM_NAME}.sock,server,nowait \
+		-pidfile ${PID_DIR}/${VM_NAME}.pid"
 
-  # network settings
-  case ${VM_NET_TYP} in
-    tap)
-      myconfig="${myconfig} \
-	-netdev tap,id="${VM_NAME}_${start_id}",ifname=qtap${start_id},script=no,downscript=no \
-	-device ${VM_NET_DRV},netdev="${VM_NAME}_${start_id}",mac=${VM_MAC_ADDRESS}"
-      ;;
-    user)
-      myconfig="${myconfig} \
-	-netdev user,id=${VM_NAME}_${start_id} \
-	-device ${VM_NET_DRV},netdev="${VM_NAME}_${start_id}",mac=${VM_MAC_ADDRESS}"
-      ;;
-    none)
-      myconfig="${myconfig} -net none"
-      ;;
-  esac
-  
-  if (${VM_ENABLE_REOMTE_ACCESS}); then
-    case ${VM_REMOTE_ACCESS} in
-      spice|SPICE)
-	VM_DISPLAY="qxl"
-	! [ -z "${VM_REMOTE_ACCESS_PW}" ] || VM_REMOTE_ACCESS_PW="\"\",disable-ticketing"
-	myconfig="${myconfig} -spice port=${VM_REMOTE_ACCESS_PORT},addr=${VM_REMOTE_ACCESS_LISTEN_IP},password=${VM_REMOTE_ACCESS_PW}"
-	;;
-      vnc|VNC)
-	# reason for changing the port to such a strange number:
-	# https://bugs.gentoo.org/show_bug.cgi?id=461744
-	# https://bugs.launchpad.net/qemu/+bug/1089496
-	let VM_REMOTE_ACCESS_PORT="${VM_REMOTE_ACCESS_PORT} + 59635 - 65535"
-	myconfig="${myconfig} -vnc ${VM_REMOTE_ACCESS_LISTEN_IP}:${VM_REMOTE_ACCESS_PORT}"
-	;;
-      *)
-	ewarn " Unknow option. Remote access will be disabled"
-	myconfig="${myconfig} -nographic"
-	;;
-    esac
-  else
-    myconfig="${myconfig} -nographic"
-  fi
+	# if nothing is set, qemu defaults to 128mb memory and smp=1
+	[ -z "${VM_MEMORY}" ] || myconfig="${myconfig} -m ${VM_MEMORY}"
+	[ -z "${VM_SMP}" ] || myconfig="${myconfig} -smp ${VM_SMP}"
+	[ -z "${VM_MACHINE}" ] || myconfig="${myconfig} -machine ${VM_MACHINE}"
+	[ -z "${VM_LC}" ] || myconfig="${myconfig} -k ${VM_LC}"
+	[ -z "${VM_CPU}" ] || myconfig="${myconfig} -cpu ${VM_CPU}"
 
-  [ -z "${VM_USB}" ] || myconfig="${myconfig} -usb ${VM_USB}"
-  [ -z "${VM_DISPLAY}" ] || myconfig="${myconfig} -vga ${VM_DISPLAY}"
-  [ -z "${VM_AUDIO}" ] || myconfig="${myconfig} -soundhw ${VM_AUDIO}"
-  [ -z "${VM_OTHERS}" ] || myconfig="${myconfig} ${VM_OTHERS}"
-  [ -z "${VM_CDROM}" ] || myconfig="${myconfig} -cdrom ${VM_CDROM}"
+	if [ -n "${VM_KERNEL}" ]; then
+		myconfig="${myconfig} -kernel ${VM_KERNEL} -initrd ${VM_INITRD}"
+		[ -z "${VM_APPEND}" ] || myconfig="${myconfig} -append \"${VM_APPEND}\""
+	fi
 
-  if ! [ -z ${VM_BOOT_DEV} ]; then
-    case ${VM_BOOT_DEV} in 
-      floppy|a)
-	myconfig="${myconfig} -boot a"
-	;;
-      harddisk|c)
-	myconfig="${myconfig} -boot c"
-	;;
-      cdrom|d)
-	myconfig="${myconfig} -boot d"
-	;;
-      network|n)
-	myconfig="${myconfig} -boot n"
-	;;
-      *)
-	ewarn " Unknow boot option. Won't set any boot options"
-	;;
-    esac
-  fi
+	# enable/disable kvm
+	(${VM_ENABLE_KVM}) && myconfig="${myconfig} -enable-kvm"
+	# daemonize true/false
+	(${VM_ENABLE_DAEMONIZE}) && myconfig="${myconfig} -daemonize"
+	# snapshotmode on/off
+	(${VM_ENABLE_SNAPSHOTMODE}) && myconfig="${myconfig} -snapshot"
+	# spice virtual serial port (copy/paste)
+	(${VM_ENABLE_VIRTSERIAL}) && myconfig="${myconfig} -device virtio-serial \
+		-chardev spicevmc,id=vdagent,name=vdagent \
+		-device virtserialport,chardev=vdagent,name=com.redhat.spice.0"
+	# qemu guest agent (qga)
+	(${VM_ENABLE_QGA}) && myconfig="${myconfig} -device virtio-serial \
+		-chardev socket,path=${PID_DIR}/${VM_NAME}-qga.sock,server,nowait,id=${VM_NAME}-qga \
+		-device virtserialport,chardev=${VM_NAME}-qga,name=org.qemu.qga.0"
+	# enable/disable harddisk
+	(${VM_ENABLE_HARDDISK}) && myconfig="${myconfig} \
+		-drive file=${VM_IMAGE},if=${VM_IMG_IF},cache=${VM_IMG_CACHE},aio=${VM_IMG_AIO}"
+
+	# network settings
+	case ${VM_NET_TYP} in
+		tap)
+			myconfig="${myconfig} \
+				-netdev tap,id="${VM_NAME}_${start_id}",ifname=qtap${start_id},script=no,downscript=no \
+				-device ${VM_NET_DRV},netdev="${VM_NAME}_${start_id}",mac=${VM_MAC_ADDRESS}"
+			;;
+		user)
+			myconfig="${myconfig} \
+				-netdev user,id=${VM_NAME}_${start_id} \
+				-device ${VM_NET_DRV},netdev="${VM_NAME}_${start_id}",mac=${VM_MAC_ADDRESS}"
+			;;
+		none)
+			myconfig="${myconfig} -net none"
+			;;
+	esac
+
+	if (${VM_ENABLE_REOMTE_ACCESS}); then
+		case ${VM_REMOTE_ACCESS} in
+			spice|SPICE)
+				VM_DISPLAY="qxl"
+				! [ -z "${VM_REMOTE_ACCESS_PW}" ] || VM_REMOTE_ACCESS_PW="\"\",disable-ticketing"
+				myconfig="${myconfig} -spice port=${VM_REMOTE_ACCESS_PORT},addr=${VM_REMOTE_ACCESS_LISTEN_IP},password=${VM_REMOTE_ACCESS_PW}"
+				;;
+			vnc|VNC)
+				# reason for changing the port to such a strange number:
+				# https://bugs.gentoo.org/show_bug.cgi?id=461744
+				# https://bugs.launchpad.net/qemu/+bug/1089496
+				let VM_REMOTE_ACCESS_PORT="${VM_REMOTE_ACCESS_PORT} + 59635 - 65535"
+				myconfig="${myconfig} -vnc ${VM_REMOTE_ACCESS_LISTEN_IP}:${VM_REMOTE_ACCESS_PORT}"
+				;;
+			*)
+				ewarn " Unknow option. Remote access will be disabled"
+				myconfig="${myconfig} -nographic"
+				;;
+		esac
+	else
+		myconfig="${myconfig} -nographic"
+	fi
+
+	[ -z "${VM_USB}" ] || myconfig="${myconfig} -usb ${VM_USB}"
+	[ -z "${VM_DISPLAY}" ] || myconfig="${myconfig} -vga ${VM_DISPLAY}"
+	[ -z "${VM_AUDIO}" ] || myconfig="${myconfig} -soundhw ${VM_AUDIO}"
+	[ -z "${VM_OTHERS}" ] || myconfig="${myconfig} ${VM_OTHERS}"
+	[ -z "${VM_CDROM}" ] || myconfig="${myconfig} -cdrom ${VM_CDROM}"
+
+	if ! [ -z ${VM_BOOT_DEV} ]; then
+		case ${VM_BOOT_DEV} in 
+			floppy|a)
+				myconfig="${myconfig} -boot a"
+				;;
+			harddisk|c)
+				myconfig="${myconfig} -boot c"
+				;;
+			cdrom|d)
+				myconfig="${myconfig} -boot d"
+				;;
+			network|n)
+				myconfig="${myconfig} -boot n"
+				;;
+			*)
+				ewarn " Unknow boot option. Won't set any boot options"
+				;;
+		esac
+	fi
 }
 
 #
@@ -490,14 +488,14 @@ myconfig(){
 # function to find out the tap id
 #
 start_tap_device(){
-  einfo "Setting up the tap interface: qtap${start_id}"
-  ${IP} tuntap add dev qtap${start_id} mode tap user ${VM_USER} || return 1
+	einfo "Setting up the tap interface: qtap${start_id}"
+	${IP} tuntap add dev qtap${start_id} mode tap user ${VM_USER} || return 1
 
-  einfo " Linking the bridge interface with qtap${start_id}"
-  ${BRCTL} addif ${BRDEV} qtap${start_id} || return 1
+	einfo " Linking the bridge interface with qtap${start_id}"
+	${BRCTL} addif ${BRDEV} qtap${start_id} || return 1
 
-  einfo " Bring qtap${start_id} interface up"
-  ${IP} link set dev qtap${start_id} up promisc on || return 1
+	einfo " Bring qtap${start_id} interface up"
+	${IP} link set dev qtap${start_id} up promisc on || return 1
 }
 
 #
@@ -505,17 +503,17 @@ start_tap_device(){
 # function to find the vm's tap device and stop it
 #
 stop_tap_device(){
-  einfo "Bring qtap${stop_id} interface down"
-  ${IP} link set dev qtap${stop_id} down
-  eend $? "Failed to bring qtap${stop_id} down"
+	einfo "Bring qtap${stop_id} interface down"
+	${IP} link set dev qtap${stop_id} down
+	eend $? "Failed to bring qtap${stop_id} down"
 
-  einfo " Unlinking the bridge interface with qtap${stop_id}"
-  ${BRCTL} delif ${BRDEV} qtap${stop_id}
-  eend $? "Failed to unlink the bridge interface to qtap${stop_id}"
+	einfo " Unlinking the bridge interface with qtap${stop_id}"
+	${BRCTL} delif ${BRDEV} qtap${stop_id}
+	eend $? "Failed to unlink the bridge interface to qtap${stop_id}"
 
-  sleep 2
-  einfo " Removing the tap interface: qtap${stop_id}"
-  ${IP} tuntap del qtap${stop_id} mode tap
+	sleep 2
+	einfo " Removing the tap interface: qtap${stop_id}"
+	${IP} tuntap del qtap${stop_id} mode tap
 }
 
 #
@@ -523,56 +521,56 @@ stop_tap_device(){
 # starts the vm
 #
 start(){
-  local qemu_bin
+	local qemu_bin
 
-  # Test if requested arch is available in qemu
-  # defaulting to system arch
-  ! [ -n ${VM_ARCH} ] && VM_ARCH=$(uname -m)
-  if command -v qemu-system-${VM_ARCH} > /dev/null ; then
-    qemu_bin="/usr/bin/qemu-system-${VM_ARCH}"
-  else
-    eerror "No support of ${VM_ARCH} in your qemu installation"
-    exit 1
-  fi
+	# Test if requested arch is available in qemu
+	# defaulting to system arch
+	! [ -n ${VM_ARCH} ] && VM_ARCH=$(uname -m)
+	if command -v qemu-system-${VM_ARCH} > /dev/null ; then
+		qemu_bin="/usr/bin/qemu-system-${VM_ARCH}"
+	else
+		eerror "No support of ${VM_ARCH} in your qemu installation"
+		exit 1
+	fi
 
-  cfgcheck || return 1
-  myconfig || return 1
-  [ ${VM_NET_TYP} = "tap" ] && start_tap_device
+	cfgcheck || return 1
+	myconfig || return 1
+	[ ${VM_NET_TYP} = "tap" ] && start_tap_device
 
-  ebegin "Start ${VM_NAME}"
+	ebegin "Start ${VM_NAME}"
 
-  (${DEBUG}) && echo -e "* Qemu settings:\n\t \
-    qemu-bin: ${qemu_bin}\n\t \
-    tmpdir: ${TMP_DIR}\n\t \
-    user: ${VM_USER}\n\t \
-    memory: ${VM_MEMORY} \n\t \
-    image: ${VM_IMAGE}\n\t \
-    kernel: ${VM_KERNEL}\n\t \
-    kernel cmd: ${VM_APPEND}\n\t \
-    initrd: ${VM_INITRD}\n\t \
-    network-typ: ${VM_NET_TYP}\n\t \
-    bridge device: ${BRDEV}\n\t \
-    qtap-interface: qtap${start_id}\n\t \
-    remote-access-port: ${VM_REMOTE_ACCESS_PORT}\n\t \
-    remote-access-typ: ${VM_REMOTE_ACCESS}\n\t \
-    boot from: ${VM_BOOT_DEV}\n\t \
-    boot media: ${VM_CDROM}\n\t \
-    full config: ${myconfig}"
+	(${DEBUG}) && echo -e "* Qemu settings:\n\t \
+		qemu-bin: ${qemu_bin}\n\t \
+		tmpdir: ${TMP_DIR}\n\t \
+		user: ${VM_USER}\n\t \
+		memory: ${VM_MEMORY} \n\t \
+		image: ${VM_IMAGE}\n\t \
+		kernel: ${VM_KERNEL}\n\t \
+		kernel cmd: ${VM_APPEND}\n\t \
+		initrd: ${VM_INITRD}\n\t \
+		network-typ: ${VM_NET_TYP}\n\t \
+		bridge device: ${BRDEV}\n\t \
+		qtap-interface: qtap${start_id}\n\t \
+		remote-access-port: ${VM_REMOTE_ACCESS_PORT}\n\t \
+		remote-access-typ: ${VM_REMOTE_ACCESS}\n\t \
+		boot from: ${VM_BOOT_DEV}\n\t \
+		boot media: ${VM_CDROM}\n\t \
+		full config: ${myconfig}"
 
-  # Start the Virtual Machine
-  TMPDIR="${TMP_DIR}" ${qemu_bin} ${myconfig} >/dev/null
+	# Start the Virtual Machine
+	TMPDIR="${TMP_DIR}" ${qemu_bin} ${myconfig} >/dev/null
 
-  # remove tap devices if the guest system couldn't be started
-  if [ "$?" != "0" ]; then
-    if [ ${VM_NET_TYP} = "tap" ]; then
-      eerror "Failed to start ${VM_NAME}, shuting down qtap${start_id}"
-      stop_id=${start_id}
-      stop_tap_device || return 1
-    fi
-    return 1
-  fi
+	# remove tap devices if the guest system couldn't be started
+	if [ "$?" != "0" ]; then
+		if [ ${VM_NET_TYP} = "tap" ]; then
+			eerror "Failed to start ${VM_NAME}, shuting down qtap${start_id}"
+			stop_id=${start_id}
+			stop_tap_device || return 1
+		fi
+		return 1
+	fi
 
-  eend $?
+	eend $?
 }
 
 #
@@ -580,65 +578,62 @@ start(){
 # stopping the vm
 #
 stop(){
-
-  # set default kill wait to 80 seconds
-  if [ -z "${VM_KILL_WAIT}" ]; then
-    VM_KILL_WAIT=80
-  fi
-
-  local KVM_PID="`cat ${PID_DIR}/${VM_NAME}.pid`"
-
-  if ( ps -p ${KVM_PID} --no-heading >/dev/null 2>&1); then
-  
-    # set VM_NET_TYP to none if the var is empty, otherwise the below test would fail if the var would be empty
-    [ -z "${VM_NET_TYP}" ] && VM_NET_TYP="none"
-    # find the next free qtap interface
-    if [ ${VM_NET_TYP} = "tap" ]; then
-      stop_id=0
-      while ! ( ps -o "command=" ${KVM_PID} | egrep qtap${stop_id} >/dev/null); do
-	let "stop_id += 1"
-	# try qtap0 to qtap${MAX_VMS} for possible ${MAX_VMS} virtual maschines
-	if [ ${stop_id} -eq ${MAX_VMS} ]; then
-	  ewarn "Couldn't find a qtap device. Please run \"/etc/init.d/kvm.init tapdel\""
-	  stop_id=""
-	  break
+	# set default kill wait to 80 seconds
+	if [ -z "${VM_KILL_WAIT}" ]; then
+		VM_KILL_WAIT=80
 	fi
-      done
-    fi
 
-    ebegin "Stopping ${VM_NAME}"
-    # sending via nc (netcat) the shutdown command
-    echo "system_powerdown" | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
-    # waiting for system to shutdown
-    
-    einfon "Waiting \"${VM_KILL_WAIT}\" seconds for ${VM_NAME} to shutdown ."
-    cnt=0
-    while [ -z "`ps -p ${KVM_PID} --no-heading`" ]; do
-	cnt=$(expr ${cnt} + 1)
-	if [ ${cnt} -gt ${VM_KILL_WAIT} ]; then
-		echo
-		eerror " Failed to shuddown ${VM_NAME}, Guest will be killed."
-		# kill qemu
-		kill -9 ${KVM_PID} > /dev/null 2>&1
-		sleep 2
-		ewarn " Killed ${VM_NAME}"
-		break
+	local KVM_PID="`cat ${PID_DIR}/${VM_NAME}.pid`"
+
+	if ( ps -p ${KVM_PID} --no-heading >/dev/null 2>&1); then
+		# set VM_NET_TYP to none if the var is empty, otherwise the below test would fail if the var would be empty
+		[ -z "${VM_NET_TYP}" ] && VM_NET_TYP="none"
+		# find the next free qtap interface
+		if [ ${VM_NET_TYP} = "tap" ]; then
+			stop_id=0
+			while ! ( ps -o "command=" ${KVM_PID} | egrep qtap${stop_id} >/dev/null); do
+				let "stop_id += 1"
+				# try qtap0 to qtap${MAX_VMS} for possible ${MAX_VMS} virtual maschines
+				if [ ${stop_id} -eq ${MAX_VMS} ]; then
+					ewarn "Couldn't find a qtap device. Please run \"/etc/init.d/kvm.init tapdel\""
+					stop_id=""
+					break
+				fi
+		  	done
+		fi
+
+		ebegin "Stopping ${VM_NAME}"
+		# sending via nc (netcat) the shutdown command
+		echo "system_powerdown" | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
+		# waiting for system to shutdown
+		einfon "Waiting \"${VM_KILL_WAIT}\" seconds for ${VM_NAME} to shutdown ."
+		cnt=0
+		while [ -z "`ps -p ${KVM_PID} --no-heading`" ]; do
+			cnt=$(expr ${cnt} + 1)
+			if [ ${cnt} -gt ${VM_KILL_WAIT} ]; then
+				echo
+				eerror " Failed to shuddown ${VM_NAME}, Guest will be killed."
+				# kill qemu
+				kill -9 ${KVM_PID} > /dev/null 2>&1
+				sleep 2
+				ewarn " Killed ${VM_NAME}"
+				break
+			fi
+			sleep 2
+			echo -n "."
+		done
+		# stop qtap device
+		[ -z ${stop_id} ] || stop_tap_device
+
+		# remove remaining files
+		rm -rf ${PID_DIR}/${VM_NAME}.pid
+		rm -rf ${PID_DIR}/${VM_NAME}.sock
+		rm -rf ${PID_DIR}/${VM_NAME}-qga.sock
+
+	else
+		ewarn "Couldn't find the process for ${VM_NAME}, guest might already down."
+		eend 0
 	fi
-	sleep 2
-	echo -n "."
-    done
-    # stop qtap device
-    [ -z ${stop_id} ] || stop_tap_device
 
-    # remove remaining files
-    rm -rf ${PID_DIR}/${VM_NAME}.pid
-    rm -rf ${PID_DIR}/${VM_NAME}.sock
-    rm -rf ${PID_DIR}/${VM_NAME}-qga.sock
-
-  else
-    ewarn "Couldn't find the process for ${VM_NAME}, guest might already down."
-    eend 0
-  fi
-
-  eend $?
+	eend $?
 }
