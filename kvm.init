@@ -421,7 +421,7 @@ myconfig(){
   case ${VM_NET_TYP} in
     tap)
       myconfig="${myconfig} \
-	-netdev tap,id="${VM_NAME}_${start_id}",vhost=on,ifname=qtap${start_id},script=no,downscript=no \
+	-netdev tap,id="${VM_NAME}_${start_id}",ifname=qtap${start_id},script=no,downscript=no \
 	-device ${VM_NET_DRV},netdev="${VM_NAME}_${start_id}",mac=${VM_MAC_ADDRESS}"
       ;;
     user)
