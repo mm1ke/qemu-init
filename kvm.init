@@ -60,9 +60,8 @@ depend(){
 # checks other vms
 #
 scan_running_vm(){
-  #shopt -s nullglob
-  local running_vm
-  local running_vm_pid
+  local running_vm,running_vm_pid
+
   for running_vm in ${PID_DIR}/*.pid; do
   if [ -e ${running_vm} ]; then
     	running_vm_pid=`<${running_vm}`
@@ -72,7 +71,6 @@ scan_running_vm(){
     	fi
   fi
   done
-  #shopt -u nullglob
 }
 
 #
@@ -124,8 +122,8 @@ info(){
 
   if [ "$VM_NAME" = "init" ]; then
     einfo "VM Overview"
+    local r_vm
     
-    #shopt -s nullglob
     for r_vm in ${PID_DIR}/*.pid; do
       if [ -e ${r_vm} ]; then
       	local pid=`<${r_vm}`
@@ -174,7 +172,6 @@ info(){
       	echo
       fi  
     done
-    #shopt -u nullglob
     
     
   else
