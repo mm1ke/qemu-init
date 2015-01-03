@@ -611,26 +611,22 @@ stop(){
     echo "system_powerdown" | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
     # waiting for system to shutdown
     
-    einfon "Waiting \"$((VM_KILL_WAIT))\" seconds for ${VM_NAME} to shutdown ."
-    for timer in `eval echo {1..$((VM_KILL_WAIT/2))}`; do
-      if [ -z "`ps -p ${KVM_PID} --no-heading`" ]; then
-	echo
-	einfo " Stopped ${VM_NAME}"
-	break
-      # if the system couldn't be shutdown
-      elif [ ${timer} -eq "$((VM_KILL_WAIT/2))" ]; then
-	echo
-	eerror "Shuddown of ${VM_NAME} failed, will kill guest"
-	# kill qemu
-	kill -9 ${KVM_PID} > /dev/null 2>&1
+    einfon "Waiting \"${VM_KILL_WAIT}\" seconds for ${VM_NAME} to shutdown ."
+    cnt=0
+    while [ -z "`ps -p ${KVM_PID} --no-heading`" ]; do
+	cnt=$(expr ${cnt} + 1)
+	if [ ${cnt} -gt ${VM_KILL_WAIT} ]; then
+		echo
+		eerror " Failed to shuddown ${VM_NAME}, Guest will be killed."
+		# kill qemu
+		kill -9 ${KVM_PID} > /dev/null 2>&1
+		sleep 2
+		ewarn " Killed ${VM_NAME}"
+		break
+	fi
 	sleep 2
-	ewarn " Killed ${VM_NAME}"
-	break
-      fi
-      sleep 2
-      echo -n "."
+	echo -n "."
     done
-
     # stop qtap device
     [ -z ${stop_id} ] || stop_tap_device
 
