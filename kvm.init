@@ -261,7 +261,6 @@ cfgcheck(){
 				| egrep -o '[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}' \
 				| head -n1`"
 		fi
-		# set port
 		# i don't use scan_running_vm here because other programms could use those ports too...
 		# have to check with netstat if a port is free
 		if [ -z "${VM_REMOTE_ACCESS_PORT}" ]; then
@@ -274,7 +273,7 @@ cfgcheck(){
 		elif $(netstat -nat | egrep "${VM_REMOTE_ACCESS_LISTEN_IP}:${VM_REMOTE_ACCESS_PORT}[^0-9]" >/dev/null); then
 			eerror "Port is already in use. Please choose an different one in ${CONF_PATH}"
 			return 1
-	fi
+		fi
 	else
 		ewarn " Remote access disabled"
 		VM_DISPLAY=""
@@ -302,7 +301,7 @@ cfgcheck(){
 				eerror "More than one possible guest vm images found. Please check your config (${CONF_PATH})"
 				return 1
 			else
-				VM_IMAGE=`ls ${VM_IMAGE}/${VM_NAME}[.]*`
+				VM_IMAGE="`ls ${VM_IMAGE}/${VM_NAME}[.]*`"
 				ewarn " VM-Image set to ${VM_IMAGE}"
 			fi
 		elif ! [ -e "${VM_IMAGE}" ]; then
@@ -334,7 +333,9 @@ cfgcheck(){
 			fi
 		else
 			# set random mac address
-			VM_MAC_ADDRESS=`printf 'DE:AD:CA:5E:%02X:%02X\n' $((RANDOM%256)) $((RANDOM%256))`
+			VM_MAC_ADDRESS="`printf 'DE:AD:CA:5E:%02X:%02X\n' \
+				$(($(dd if=/dev/urandom count=1 2> /dev/null | cksum | cut -d' ' -f1) % 256)) \
+				$(($(dd if=/dev/urandom count=1 2> /dev/null | cksum | cut -d' ' -f1) % 256))`"
 			ewarn " ** RANDOM MAC ADDRESS! Address will be lost on shutdown! **"
 		fi
 
@@ -562,7 +563,7 @@ start(){
 
 	# remove tap devices if the guest system couldn't be started
 	if [ "$?" != "0" ]; then
-		if [ ${VM_NET_TYP} = "tap" ]; then
+		if [ "${VM_NET_TYP}" = "tap" ]; then
 			eerror "Failed to start ${VM_NAME}, shuting down qtap${start_id}"
 			stop_id=${start_id}
 			stop_tap_device || return 1
