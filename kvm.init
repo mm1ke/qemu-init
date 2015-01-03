@@ -267,7 +267,7 @@ cfgcheck(){
 		if [ -z "${VM_REMOTE_ACCESS_PORT}" ]; then
 			local port_nr=0
 			while $(netstat -nat | egrep "${VM_REMOTE_ACCESS_LISTEN_IP}:580${port_nr}[^0-9]" >/dev/null); do
-				let "port_nr += 1"
+				port_nr=$(expr ${port_nr} + 1)
 			done
 			VM_REMOTE_ACCESS_PORT="580${port_nr}"
 		# check port if it was manuel set
@@ -352,7 +352,7 @@ cfgcheck(){
 				# get the guest_nummber for qtap...
 				start_id=0;
 				while (${BRCTL} show | egrep qtap${start_id} >/dev/null 2>&1); do
-					let "start_id += 1"
+					start_id=$(expr ${start_id} + 1)
 				done
 				# check for max_vms
 				if [ ${start_id} -ge ${MAX_VMS} ]; then
@@ -444,7 +444,7 @@ myconfig(){
 				# reason for changing the port to such a strange number:
 				# https://bugs.gentoo.org/show_bug.cgi?id=461744
 				# https://bugs.launchpad.net/qemu/+bug/1089496
-				let VM_REMOTE_ACCESS_PORT="${VM_REMOTE_ACCESS_PORT} + 59635 - 65535"
+				VM_REMOTE_ACCESS_PORT=$(expr ${VM_REMOTE_ACCESS_PORT} + 59635 - 65535)
 				myconfig="${myconfig} -vnc ${VM_REMOTE_ACCESS_LISTEN_IP}:${VM_REMOTE_ACCESS_PORT}"
 				;;
 			*)
@@ -525,7 +525,7 @@ start(){
 
 	# Test if requested arch is available in qemu
 	# defaulting to system arch
-	! [ -n ${VM_ARCH} ] && VM_ARCH=$(uname -m)
+	[ -z "${VM_ARCH}" ] && VM_ARCH="$(uname -m)"
 	if command -v qemu-system-${VM_ARCH} > /dev/null ; then
 		qemu_bin="/usr/bin/qemu-system-${VM_ARCH}"
 	else
@@ -579,20 +579,18 @@ start(){
 #
 stop(){
 	# set default kill wait to 80 seconds
-	if [ -z "${VM_KILL_WAIT}" ]; then
-		VM_KILL_WAIT=80
-	fi
+	[ -z "${VM_KILL_WAIT}" ] && VM_KILL_WAIT=80
 
 	local KVM_PID="`cat ${PID_DIR}/${VM_NAME}.pid`"
 
-	if ( ps -p ${KVM_PID} --no-heading >/dev/null 2>&1); then
+	if (ps -p ${KVM_PID} --no-heading >/dev/null 2>&1); then
 		# set VM_NET_TYP to none if the var is empty, otherwise the below test would fail if the var would be empty
 		[ -z "${VM_NET_TYP}" ] && VM_NET_TYP="none"
 		# find the next free qtap interface
 		if [ ${VM_NET_TYP} = "tap" ]; then
 			stop_id=0
 			while ! ( ps -o "command=" ${KVM_PID} | egrep qtap${stop_id} >/dev/null); do
-				let "stop_id += 1"
+				stop_id=$(expr ${stop_id} + 1)
 				# try qtap0 to qtap${MAX_VMS} for possible ${MAX_VMS} virtual maschines
 				if [ ${stop_id} -eq ${MAX_VMS} ]; then
 					ewarn "Couldn't find a qtap device. Please run \"/etc/init.d/kvm.init tapdel\""
@@ -607,7 +605,7 @@ stop(){
 		echo "system_powerdown" | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
 		# waiting for system to shutdown
 		einfon "Waiting \"${VM_KILL_WAIT}\" seconds for ${VM_NAME} to shutdown ."
-		cnt=0
+		local cnt=0
 		while [ -z "`ps -p ${KVM_PID} --no-heading`" ]; do
 			cnt=$(expr ${cnt} + 1)
 			if [ ${cnt} -gt ${VM_KILL_WAIT} ]; then
@@ -623,7 +621,7 @@ stop(){
 			echo -n "."
 		done
 		# stop qtap device
-		[ -z ${stop_id} ] || stop_tap_device
+		[ -z "${stop_id}" ] || stop_tap_device
 
 		# remove remaining files
 		rm -rf ${PID_DIR}/${VM_NAME}.pid
