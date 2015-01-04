@@ -54,7 +54,8 @@ depend(){
 # checks other vms
 #
 scan_running_vm(){
-	local running_vm,running_vm_pid
+	local running_vm
+	local running_vm_pid
 
 	for running_vm in ${PID_DIR}/*.pid; do
 	if [ -e "${running_vm}" ]; then
@@ -379,7 +380,9 @@ cfgcheck(){
 		VM_DISPLAY=""
 	fi
 
-	(${VM_ENABLE_SNAPSHOTMODE}) && ewarn " ** SNAPSHOT MODE! Changes in the guest system won't be saved! **"
+	if (${VM_ENABLE_SNAPSHOTMODE}); then
+		ewarn " ** SNAPSHOT MODE! Changes in the guest system won't be saved! **"
+	fi
 }
 
 #
@@ -618,6 +621,7 @@ stop(){
 			sleep 2
 			printf "."
 		done
+		echo
 		# stop qtap device
 		[ -z "${stop_id}" ] || stop_tap_device
 
@@ -631,5 +635,5 @@ stop(){
 		eend 0
 	fi
 
-	eend $?
+	eend 0
 }
