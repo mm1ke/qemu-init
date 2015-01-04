@@ -234,9 +234,7 @@ cfgcheck(){
 	fi
 
 	# guest wont start with "host" cpu if kvm is disabled
-	if [ "$VM_CPU" = "host" ]; then
-		VM_ENABLE_KVM="true"
-	fi
+	[ "$VM_CPU" = "host" ] && VM_ENABLE_KVM="true"
 
 	# arch spezific configuration
 	case ${VM_ARCH} in
@@ -253,32 +251,6 @@ cfgcheck(){
 			;;
 	esac
 
-	# remote access checks
-	if (${VM_ENABLE_REOMTE_ACCESS}); then
-		# set listening ip
-		if [ -z "${VM_REMOTE_ACCESS_LISTEN_IP}" ]; then
-			VM_REMOTE_ACCESS_LISTEN_IP="`${IP} address show ${BRDEV} \
-				| egrep -o '[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}' \
-				| head -n1`"
-		fi
-		# i don't use scan_running_vm here because other programms could use those ports too...
-		# have to check with netstat if a port is free
-		if [ -z "${VM_REMOTE_ACCESS_PORT}" ]; then
-			local port_nr=0
-			while $(netstat -nat | egrep "${VM_REMOTE_ACCESS_LISTEN_IP}:580${port_nr}[^0-9]" >/dev/null); do
-				port_nr=$(expr ${port_nr} + 1)
-			done
-			VM_REMOTE_ACCESS_PORT="580${port_nr}"
-		# check port if it was manuel set
-		elif $(netstat -nat | egrep "${VM_REMOTE_ACCESS_LISTEN_IP}:${VM_REMOTE_ACCESS_PORT}[^0-9]" >/dev/null); then
-			eerror "Port is already in use. Please choose an different one in ${CONF_PATH}"
-			return 1
-		fi
-	else
-		ewarn " Remote access disabled"
-		VM_DISPLAY=""
-	fi
-	
 	# cdrom checks
 	if ! [ -z "${VM_CDROM}" ]; then
 		if ! [ -e "${VM_CDROM}" ]; then
@@ -286,7 +258,7 @@ cfgcheck(){
 			return 1
 		fi
 	fi
-	
+
 	# image checks/default settings
 	if (${VM_ENABLE_HARDDISK}); then
 		if [ -z "${VM_IMAGE}" ]; then
@@ -341,6 +313,7 @@ cfgcheck(){
 
 		case ${VM_NET_TYP} in
 			tap)
+				# check bridge device
 				if [ -n "${BRDEV}" ]; then
 					if ! (${IP} link show ${BRDEV} > /dev/null 2>&1); then
 						eerror "${BRDEV} dosen't exist. Please check your config (${CONF_PATH})"
@@ -361,7 +334,17 @@ cfgcheck(){
 					return 1
 				fi
 				;;
-			user|none)
+			user)
+				[ -z "${BRDEV}" ] && VM_REMOTE_ACCESS_LISTEN_IP="127.0.0.1"
+				if [ -n "${BRDEV}" ]; then
+					if ! (${IP} link show ${BRDEV} > /dev/null 2>&1); then
+						ewarn " ${BRDEV} dosen't exist. Remote Access set to 127.0.0.1"
+						VM_REMOTE_ACCESS_LISTEN_IP="127.0.0.1"
+					fi
+				fi
+				;;
+			none)
+				VM_REMOTE_ACCESS_LISTEN_IP="127.0.0.1"
 				;;
 			*)
 				ewarn "** Unknow Network Typ. Network will be disabled"
@@ -370,9 +353,33 @@ cfgcheck(){
 		esac
 	fi
 
-	if (${VM_ENABLE_SNAPSHOTMODE}); then
-		ewarn " ** SNAPSHOT MODE! Changes in the guest system won't be saved! **"
+	# remote access checks
+	if (${VM_ENABLE_REOMTE_ACCESS}); then
+		# set listening ip
+		if [ -z "${VM_REMOTE_ACCESS_LISTEN_IP}" ]; then
+			VM_REMOTE_ACCESS_LISTEN_IP="`${IP} address show ${BRDEV} \
+				| egrep -o '[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}' \
+				| head -n1`"
+		fi
+		# i don't use scan_running_vm here because other programms could use those ports too...
+		# have to check with netstat if a port is free
+		if [ -z "${VM_REMOTE_ACCESS_PORT}" ]; then
+			local port_nr=0
+			while $(netstat -nat | egrep "${VM_REMOTE_ACCESS_LISTEN_IP}:580${port_nr}[^0-9]" >/dev/null); do
+				port_nr=$(expr ${port_nr} + 1)
+			done
+			VM_REMOTE_ACCESS_PORT="580${port_nr}"
+		# check port if it was manuel set
+		elif $(netstat -nat | egrep "${VM_REMOTE_ACCESS_LISTEN_IP}:${VM_REMOTE_ACCESS_PORT}[^0-9]" >/dev/null); then
+			eerror "Port is already in use. Please choose an different one in ${CONF_PATH}"
+			return 1
+		fi
+	else
+		ewarn " Remote access disabled"
+		VM_DISPLAY=""
 	fi
+
+	(${VM_ENABLE_SNAPSHOTMODE}) && ewarn " ** SNAPSHOT MODE! Changes in the guest system won't be saved! **"
 }
 
 #
@@ -465,21 +472,11 @@ myconfig(){
 
 	if ! [ -z ${VM_BOOT_DEV} ]; then
 		case ${VM_BOOT_DEV} in 
-			floppy|a)
-				myconfig="${myconfig} -boot a"
-				;;
-			harddisk|c)
-				myconfig="${myconfig} -boot c"
-				;;
-			cdrom|d)
-				myconfig="${myconfig} -boot d"
-				;;
-			network|n)
-				myconfig="${myconfig} -boot n"
-				;;
-			*)
-				ewarn " Unknow boot option. Won't set any boot options"
-				;;
+			floppy|a) myconfig="${myconfig} -boot a" ;;
+			harddisk|c) myconfig="${myconfig} -boot c" ;;
+			cdrom|d) myconfig="${myconfig} -boot d" ;;
+			network|n) myconfig="${myconfig} -boot n" ;;
+			*) ewarn " Unknow boot option. Won't set any boot options" ;;
 		esac
 	fi
 }
@@ -540,7 +537,7 @@ start(){
 
 	ebegin "Start ${VM_NAME}"
 
-	(${DEBUG}) && echo -e "* Qemu settings:\n\t \
+	(${DEBUG}) && printf "* Qemu settings:\n\t \
 		qemu-bin: ${qemu_bin}\n\t \
 		tmpdir: ${TMP_DIR}\n\t \
 		user: ${VM_USER}\n\t \
@@ -556,7 +553,7 @@ start(){
 		remote-access-typ: ${VM_REMOTE_ACCESS}\n\t \
 		boot from: ${VM_BOOT_DEV}\n\t \
 		boot media: ${VM_CDROM}\n\t \
-		full config: ${myconfig}"
+		full config: ${myconfig}\n"
 
 	# Start the Virtual Machine
 	TMPDIR="${TMP_DIR}" ${qemu_bin} ${myconfig} >/dev/null
@@ -605,21 +602,21 @@ stop(){
 		# sending via nc (netcat) the shutdown command
 		echo "system_powerdown" | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
 		# waiting for system to shutdown
-		einfon "Waiting \"${VM_KILL_WAIT}\" seconds for ${VM_NAME} to shutdown ."
+		einfon "Waiting ${VM_KILL_WAIT} seconds for ${VM_NAME} to shutdown."
 		local cnt=0
-		while [ -z "`ps -p ${KVM_PID} --no-heading`" ]; do
-			cnt=$(expr ${cnt} + 1)
+		while [ -n "`ps -p ${KVM_PID} --no-heading`" ]; do
+			cnt=$(expr ${cnt} + 2)
 			if [ ${cnt} -gt ${VM_KILL_WAIT} ]; then
 				echo
 				eerror " Failed to shuddown ${VM_NAME}, Guest will be killed."
 				# kill qemu
 				kill -9 ${KVM_PID} > /dev/null 2>&1
-				sleep 2
+				sleep 1
 				ewarn " Killed ${VM_NAME}"
 				break
 			fi
 			sleep 2
-			echo -n "."
+			printf "."
 		done
 		# stop qtap device
 		[ -z "${stop_id}" ] || stop_tap_device
