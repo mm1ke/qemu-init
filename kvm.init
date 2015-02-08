@@ -45,6 +45,9 @@ DEBUG=false
 VM_NAME=${RC_SVCNAME#*.}
 CONF_PATH="/etc/conf.d/kvm.${VM_NAME}"
 
+
+9P_SHARING=false
+
 depend(){
 	need net
 }
@@ -260,6 +263,16 @@ cfgcheck(){
 		fi
 	fi
 
+	# 9P directory check
+	if ! [ -z "${VM_9P_PATH}" ]; then
+		if ! [ -e "${VM_9P_PATH}" ]; then
+			eerror "9P path not found. Please check your config (${CONF_PATH})"
+			return 1
+		else
+			9P_SHARING=true
+		fi
+	fi
+
 	# image checks/default settings
 	if (${VM_ENABLE_HARDDISK}); then
 		if [ -z "${VM_IMAGE}" ]; then
@@ -467,6 +480,10 @@ myconfig(){
 		myconfig="${myconfig} -nographic"
 	fi
 
+	(${9P_SHARING}) && myconfig="${myconfig} \
+		-fsdev local,id="${VM_NAME}_9p",path="${VM_9P_PATH}",security_model=none \
+		-device virtio-9p-pci,fsdev="${VM_NAME}_9p",mount_tag="${VM_NAME}_9p_mount""
+
 	[ -z "${VM_USB}" ] || myconfig="${myconfig} -usb ${VM_USB}"
 	[ -z "${VM_DISPLAY}" ] || myconfig="${myconfig} -vga ${VM_DISPLAY}"
 	[ -z "${VM_AUDIO}" ] || myconfig="${myconfig} -soundhw ${VM_AUDIO}"
@@ -474,7 +491,7 @@ myconfig(){
 	[ -z "${VM_CDROM}" ] || myconfig="${myconfig} -cdrom ${VM_CDROM}"
 
 	if ! [ -z ${VM_BOOT_DEV} ]; then
-		case ${VM_BOOT_DEV} in 
+		case ${VM_BOOT_DEV} in
 			floppy|a) myconfig="${myconfig} -boot a" ;;
 			harddisk|c) myconfig="${myconfig} -boot c" ;;
 			cdrom|d) myconfig="${myconfig} -boot d" ;;
