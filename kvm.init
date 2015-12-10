@@ -44,9 +44,6 @@ DEBUG=false
 VM_NAME=${RC_SVCNAME#*.}
 CONF_PATH="/etc/conf.d/kvm.${VM_NAME}"
 
-
-9P_SHARING=false
-
 depend(){
 	need net
 }
@@ -136,6 +133,7 @@ cfgcheck(){
 		fi
 	fi
 
+	9P_SHARING=false
 	# 9P directory check
 	if ! [ -z "${VM_9P_PATH}" ]; then
 		if ! [ -e "${VM_9P_PATH}" ]; then
