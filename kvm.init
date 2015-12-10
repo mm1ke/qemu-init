@@ -419,7 +419,7 @@ myconfig(){
 
 	if [ -n "${VM_KERNEL}" ]; then
 		myconfig="${myconfig} -kernel ${VM_KERNEL} -initrd ${VM_INITRD}"
-		[ -z "${VM_APPEND}" ] || myconfig="${myconfig} -append \"${VM_APPEND}\""
+		[ -z "${VM_APPEND}" ] || myconfig="${myconfig} -append ${VM_APPEND}"
 	fi
 
 	# enable/disable kvm
