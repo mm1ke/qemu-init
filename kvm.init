@@ -303,6 +303,8 @@ cfgcheck(){
 		[ -z "${VM_IMG_CACHE}" ] && VM_IMG_CACHE="none"
 		[ -z "${VM_IMG_IF}" ] && VM_IMG_IF="ide"
 		[ -z "${VM_IMG_AIO}" ] && VM_IMG_AIO="threads"
+		# set image format to raw if lvm partition is used
+		[ -b "${VM_IMAGE}" ] && VM_IMAGE="${VM_IMAGE},format=raw"
 	fi
 
 	# network checks/default settings
