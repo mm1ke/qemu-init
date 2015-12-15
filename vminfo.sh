@@ -1,8 +1,8 @@
 #!/sbin/runscript
 
-# Filename: kvm.init
+# Filename: vminfo.sh
 # Autor: Michael Mair-Keimberger (m DOT mairkeimberger AT gmail DOT com)
-# Date: 13.08.2009
+# Date: 14.12.2015
 
 # Copyright (C) 2015  Michael Mair-Keimberger
 #
@@ -21,7 +21,8 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 # Discription:
-# start/stop script for qemu guests
+# split from kvm.init
+# vminfo.sh shows statistics from vms
 
 
 #
