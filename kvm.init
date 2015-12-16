@@ -38,6 +38,7 @@ TMP_DIR="/var/tmp"
 # max supported vms
 MAX_VMS=30
 
+FS_SHARING_9P=false
 # true/false
 DEBUG=false
 
@@ -133,14 +134,13 @@ cfgcheck(){
 		fi
 	fi
 
-	9P_SHARING=false
 	# 9P directory check
 	if ! [ -z "${VM_9P_PATH}" ]; then
 		if ! [ -e "${VM_9P_PATH}" ]; then
 			eerror "9P path not found. Please check your config (${CONF_PATH})"
 			return 1
 		else
-			9P_SHARING=true
+			FS_SHARING_9P=true
 		fi
 	fi
 
@@ -353,7 +353,7 @@ myconfig(){
 		myconfig="${myconfig} -nographic"
 	fi
 
-	(${9P_SHARING}) && myconfig="${myconfig} \
+	(${FS_SHARING_9P}) && myconfig="${myconfig} \
 		-fsdev local,id="${VM_NAME}_9p",path="${VM_9P_PATH}",security_model=none \
 		-device virtio-9p-pci,fsdev="${VM_NAME}_9p",mount_tag="${VM_NAME}_9p_mount""
 
