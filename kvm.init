@@ -499,16 +499,20 @@ stop(){
 		[ -z "${VM_NET_TYP}" ] && VM_NET_TYP="none"
 		# find the next free qtap interface
 		if [ ${VM_NET_TYP} = "tap" ]; then
-			stop_id=0
-			while ! ( ps -o "command=" ${KVM_PID} | egrep qtap${stop_id} >/dev/null); do
-				stop_id=$(expr ${stop_id} + 1)
-				# try qtap0 to qtap${MAX_VMS} for possible ${MAX_VMS} virtual maschines
-				if [ ${stop_id} -eq ${MAX_VMS} ]; then
-					ewarn "Couldn't find a qtap device. Please run \"/etc/init.d/kvm.init tapdel\""
-					stop_id=""
-					break
-				fi
-		  	done
+
+			stop_id=`ps -o "command=" ${KVM_PID}|grep -o qtap. |tail -c 2`
+			[ -z ${stop_id} ] &&  ewarn "Couldn't find a qtap device. Please run \"/etc/init.d/kvm.init tapdel\""
+
+			#stop_id=0
+			#while ! ( ps -o "command=" ${KVM_PID} | egrep qtap${stop_id} >/dev/null); do
+			#	stop_id=$(expr ${stop_id} + 1)
+			#	# try qtap0 to qtap${MAX_VMS} for possible ${MAX_VMS} virtual maschines
+			#	if [ ${stop_id} -eq ${MAX_VMS} ]; then
+			#		ewarn "Couldn't find a qtap device. Please run \"/etc/init.d/kvm.init tapdel\""
+			#		stop_id=""
+			#		break
+			#	fi
+		  	#done
 		fi
 
 		ebegin "Stopping ${VM_NAME}"
