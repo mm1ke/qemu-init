@@ -146,13 +146,6 @@ cfgcheck(){
 				FS_SHARING_9P=true
 			fi
 		done
-			
-		#if ! [ -e "${VM_9P_PATH}" ]; then
-		#	eerror "9P path not found. Please check your config (${CONF_PATH})"
-		#	return 1
-		#else
-		#	FS_SHARING_9P=true
-		#fi
 	fi
 
 	# image checks/default settings
@@ -375,10 +368,6 @@ myconfig(){
 			id=$(expr ${id} + 1)
 		done
 	fi
-
-#	(${FS_SHARING_9P}) && myconfig="${myconfig} \
-#		-fsdev local,id="${VM_NAME}_9p",path="${VM_9P_PATH}",security_model=none \
-#		-device virtio-9p-pci,fsdev="${VM_NAME}_9p",mount_tag="${VM_NAME}_9p_mount""
 
 	[ -z "${VM_USB}" ] || myconfig="${myconfig} -usb ${VM_USB}"
 	[ -z "${VM_DISPLAY}" ] || myconfig="${myconfig} -vga ${VM_DISPLAY}"
