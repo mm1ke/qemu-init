@@ -136,6 +136,14 @@ cfgcheck(){
 
 	# 9P directory check
 	if ! [ -z "${VM_9P_PATH}" ]; then
+		for single_9p in ${VM_9P_PATH}; do
+			local share_name="`echo ${single_9p%%:*}`"
+			local share_path="`echo ${single_9p##*:}`"
+			if [ -z ${share_name} ] || ! [ -e ${share_path} ]; then
+				eerror "Name not given or Path does not exist. Please check your config (${CONF_PATH})"
+			fi
+		done
+			
 		if ! [ -e "${VM_9P_PATH}" ]; then
 			eerror "9P path not found. Please check your config (${CONF_PATH})"
 			return 1
@@ -353,9 +361,19 @@ myconfig(){
 		myconfig="${myconfig} -nographic"
 	fi
 
-	(${FS_SHARING_9P}) && myconfig="${myconfig} \
-		-fsdev local,id="${VM_NAME}_9p",path="${VM_9P_PATH}",security_model=none \
-		-device virtio-9p-pci,fsdev="${VM_NAME}_9p",mount_tag="${VM_NAME}_9p_mount""
+	if (${FS_SHARING_9P}); then
+		for share in ${VM_9P_PATH}; do
+			local share_name="`echo ${VM_9P_PATH%%:*}`"
+			local share_path="`echo ${VM_9P_PATH##*:}`"
+			myconfig="${myconfig} \
+				-fsdev local,id="${VM_NAME}_9p",path="${share_path}",security_model=none \
+				-device virtio-9p-pci,fsdev="${VM_NAME}_9p",mount_tag="${share_name}""
+		done
+	fi
+
+#	(${FS_SHARING_9P}) && myconfig="${myconfig} \
+#		-fsdev local,id="${VM_NAME}_9p",path="${VM_9P_PATH}",security_model=none \
+#		-device virtio-9p-pci,fsdev="${VM_NAME}_9p",mount_tag="${VM_NAME}_9p_mount""
 
 	[ -z "${VM_USB}" ] || myconfig="${myconfig} -usb ${VM_USB}"
 	[ -z "${VM_DISPLAY}" ] || myconfig="${myconfig} -vga ${VM_DISPLAY}"
