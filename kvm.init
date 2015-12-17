@@ -141,15 +141,18 @@ cfgcheck(){
 			local share_path="`echo ${single_9p##*:}`"
 			if [ -z ${share_name} ] || ! [ -e ${share_path} ]; then
 				eerror "Name not given or Path does not exist. Please check your config (${CONF_PATH})"
+				return 1
+			else
+				FS_SHARING_9P=true
 			fi
 		done
 			
-		if ! [ -e "${VM_9P_PATH}" ]; then
-			eerror "9P path not found. Please check your config (${CONF_PATH})"
-			return 1
-		else
-			FS_SHARING_9P=true
-		fi
+		#if ! [ -e "${VM_9P_PATH}" ]; then
+		#	eerror "9P path not found. Please check your config (${CONF_PATH})"
+		#	return 1
+		#else
+		#	FS_SHARING_9P=true
+		#fi
 	fi
 
 	# image checks/default settings
@@ -362,12 +365,14 @@ myconfig(){
 	fi
 
 	if (${FS_SHARING_9P}); then
+		local id=0
 		for share in ${VM_9P_PATH}; do
-			local share_name="`echo ${VM_9P_PATH%%:*}`"
-			local share_path="`echo ${VM_9P_PATH##*:}`"
+			local share_name="`echo ${share%%:*}`"
+			local share_path="`echo ${share##*:}`"
 			myconfig="${myconfig} \
-				-fsdev local,id="${VM_NAME}_9p",path="${share_path}",security_model=none \
-				-device virtio-9p-pci,fsdev="${VM_NAME}_9p",mount_tag="${share_name}""
+				-fsdev local,id="${VM_NAME}_9p_${id}",path="${share_path}",security_model=none \
+				-device virtio-9p-pci,fsdev="${VM_NAME}_9p_${id}",mount_tag="${share_name}""
+			id=$(expr ${id} + 1)
 		done
 	fi
 
@@ -448,6 +453,13 @@ start(){
 
 	ebegin "Starting ${VM_NAME}..."
 	(${VM_ENABLE_REOMTE_ACCESS}) && ebegin " remote access via ${VM_REMOTE_ACCESS} on ${VM_REMOTE_ACCESS_LISTEN_IP}:${VM_REMOTE_ACCESS_PORT}"
+	if ${FS_SHARING_9P}; then
+		for share in ${VM_9P_PATH}; do
+			local share_name="`echo ${share%%:*}`"
+			local share_path="`echo ${share##*:}`"
+			ebegin " Shared Folder: ${share_path} Shared Name: ${share_name}"
+		done
+	fi
 
 	(${DEBUG}) && printf "* Qemu settings:\n\t \
 		qemu-bin: ${qemu_bin}\n\t \
