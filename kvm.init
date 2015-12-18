@@ -517,6 +517,7 @@ stop(){
 		[ -z "${VM_NET_TYP}" ] && VM_NET_TYP="none"
 		# find the next free qtap interface
 		if [ ${VM_NET_TYP} = "tap" ]; then
+			# filter last 2 chars (the last one is a new line and doesn't matter)
 			stop_id=`ps -o "command=" ${KVM_PID}|grep -o qtap. |tail -c 2`
 			[ -z ${stop_id} ] &&  ewarn "Couldn't find a qtap device. Please run \"/etc/init.d/kvm.init tapdel\""
 		fi
