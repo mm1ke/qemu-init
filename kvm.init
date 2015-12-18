@@ -327,7 +327,7 @@ myconfig(){
 	# qemu guest agent (qga)
 	(${VM_ENABLE_QGA}) && myconfig="${myconfig} -device virtio-serial \
 		-chardev socket,path=${PID_DIR}/${VM_NAME}-qga.sock,server,nowait,id=${VM_NAME}-qga \
-		-device virtserialport,chardev=${VM_NAME}-qga,name=org.qemu.qga.0"
+		-device virtserialport,chardev=${VM_NAME}-qga,name=org.qemu.guest_agent.0"
 	# enable/disable harddisk
 	(${VM_ENABLE_HARDDISK}) && myconfig="${myconfig} \
 		-drive file=${VM_IMAGE},if=${VM_IMG_IF},cache=${VM_IMG_CACHE},aio=${VM_IMG_AIO}"
