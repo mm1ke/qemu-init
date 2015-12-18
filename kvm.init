@@ -311,7 +311,7 @@ myconfig(){
 
 	if [ -n "${VM_KERNEL}" ]; then
 		myconfig="${myconfig} -kernel ${VM_KERNEL} -initrd ${VM_INITRD}"
-		[ -z "${VM_APPEND}" ] || myconfig="${myconfig} -append ${VM_APPEND}"
+		[ -z "${VM_APPEND}" ] || myconfig="${myconfig} -append \"${VM_APPEND}\""
 	fi
 
 	# enable/disable kvm
@@ -485,7 +485,9 @@ start(){
 		full config: ${myconfig}\n"
 
 	# Start the Virtual Machine
-	TMPDIR="${TMP_DIR}" ${qemu_bin} ${myconfig} >/dev/null
+	# start guest with /bin/sh, otherwise qemu breaks with
+	# multiple append statements (probably a qemu or runscript bug)
+	/bin/sh/ -c "TMPDIR="${TMP_DIR}" ${qemu_bin} ${myconfig} >/dev/null"
 
 	# remove tap devices if the guest system couldn't be started
 	if [ "$?" != "0" ]; then
