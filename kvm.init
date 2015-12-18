@@ -146,6 +146,21 @@ cfgcheck(){
 				FS_SHARING_9P=true
 			fi
 		done
+		
+		# default security model none
+		if [ -z ${VM_9P_SEC_MODE} ]; then
+			VM_9P_SEC_MODE="none"
+		else
+			case "${VM_9P_SEC_MODE}" in
+				none|NONE|mapped|MAPPED|passthrough|PASSTHROUGH) ;;
+				*)
+					ewarn "9P: Unknown Security Mode - Setting default none"
+					VM_9P_SEC_MODE="none"
+					;;
+			esac
+		fi
+
+
 	fi
 
 	# image checks/default settings
@@ -363,10 +378,11 @@ myconfig(){
 			local share_name="`echo ${share%%:*}`"
 			local share_path="`echo ${share##*:}`"
 			myconfig="${myconfig} \
-				-fsdev local,id="${VM_NAME}_9p_${id}",path="${share_path}",security_model=none \
+				-fsdev local,id="${VM_NAME}_9p_${id}",path="${share_path}",security_model="${VM_9P_SEC_MODE}" \
 				-device virtio-9p-pci,fsdev="${VM_NAME}_9p_${id}",mount_tag="${share_name}""
 			id=$(expr ${id} + 1)
 		done
+
 	fi
 
 	[ -z "${VM_USB}" ] || myconfig="${myconfig} -usb ${VM_USB}"
