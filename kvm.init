@@ -127,7 +127,7 @@ cfgcheck(){
 	esac
 
 	# cdrom checks
-	if ! [ -z "${VM_CDROM}" ]; then
+	if [ -n "${VM_CDROM}" ]; then
 		if ! [ -e "${VM_CDROM}" ]; then
 			eerror "Image dosn't exist. Please check your config (${CONF_PATH})"
 			return 1
@@ -135,7 +135,7 @@ cfgcheck(){
 	fi
 
 	# 9P directory check
-	if ! [ -z "${VM_9P_PATH}" ]; then
+	if [ -n "${VM_9P_PATH}" ]; then
 		for single_9p in ${VM_9P_PATH}; do
 			local share_name="`echo ${single_9p%%:*}`"
 			local share_path="`echo ${single_9p##*:}`"
@@ -204,7 +204,7 @@ cfgcheck(){
 		# set default network driver
 		[ -z "${VM_NET_DRV}" ] && VM_NET_DRV="rtl8139"
 		# check for mac address
-		if ! [ -z "${VM_MAC_ADDRESS}" ]; then
+		if [ -n "${VM_MAC_ADDRESS}" ]; then
 			if ! scan_running_vm "${VM_MAC_ADDRESS}"; then
 				eerror "MAC-address already used by \"/etc/init.d/kvm.${match_vm##*/}\"!"
 				return 1
@@ -353,7 +353,7 @@ myconfig(){
 		case ${VM_REMOTE_ACCESS} in
 			spice|SPICE)
 				VM_DISPLAY="qxl"
-				! [ -z "${VM_REMOTE_ACCESS_PW}" ] || VM_REMOTE_ACCESS_PW="\"\",disable-ticketing"
+				[ -n "${VM_REMOTE_ACCESS_PW}" ] || VM_REMOTE_ACCESS_PW="\"\",disable-ticketing"
 				myconfig="${myconfig} -spice port=${VM_REMOTE_ACCESS_PORT},addr=${VM_REMOTE_ACCESS_LISTEN_IP},password=${VM_REMOTE_ACCESS_PW}"
 				;;
 			vnc|VNC)
