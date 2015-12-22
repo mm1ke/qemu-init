@@ -92,13 +92,14 @@ tapdel(){
 # make some configuration checks
 #
 cfgcheck(){
+	local default_msg="Please check your config (${CONF_PATH})"
 
 	# basic tests/settings
 	[ -d ${PID_DIR} ] || mkdir ${PID_DIR}
 	[ -d ${TMP_DIR} ] || TMP_DIR="/var/tmp"
 
 	if ! [ `egrep -i "^${VM_USER}" /etc/passwd` ]; then
-		eerror "User \"${VM_USER}\" not found in /etc/passwd."
+		eerror "User \"${VM_USER}\" not found in /etc/passwd. ${default_msg}"
 		return 1
 	fi
 
@@ -129,7 +130,7 @@ cfgcheck(){
 	# cdrom checks
 	if [ -n "${VM_CDROM}" ]; then
 		if ! [ -e "${VM_CDROM}" ]; then
-			eerror "Image dosn't exist. Please check your config (${CONF_PATH})"
+			eerror "Image dosn't exist. ${default_msg}"
 			return 1
 		fi
 	fi
@@ -140,7 +141,7 @@ cfgcheck(){
 			local share_name="`echo ${single_9p%%:*}`"
 			local share_path="`echo ${single_9p##*:}`"
 			if [ -z ${share_name} ] || ! [ -e ${share_path} ]; then
-				eerror "Name not given or Path does not exist. Please check your config (${CONF_PATH})"
+				eerror "Name not given or Path does not exist. ${default_msg}"
 				return 1
 			else
 				FS_SHARING_9P=true
@@ -154,7 +155,7 @@ cfgcheck(){
 			case "${VM_9P_SEC_MODE}" in
 				none|NONE|mapped|MAPPED|passthrough|PASSTHROUGH) ;;
 				*)
-					ewarn "9P: Unknown Security Mode - Setting default none"
+					ewarn " ** 9P: Unknown Security Mode - Setting default none"
 					VM_9P_SEC_MODE="none"
 					;;
 			esac
@@ -166,7 +167,7 @@ cfgcheck(){
 	# image checks/default settings
 	if (${VM_ENABLE_HARDDISK}); then
 		if [ -z "${VM_IMAGE}" ]; then
-			eerror "No vm-image set. Please check your config (${CONF_PATH})"
+			eerror "No vm-image set. ${default_msg}"
 			return 1
 		fi
 
@@ -174,14 +175,14 @@ cfgcheck(){
 			if [ -e "${VM_IMAGE}/${VM_NAME}" ]; then
 				VM_IMAGE="${VM_IMAGE}/${VM_NAME}"
 			elif [ `ls ${VM_IMAGE}${VM_NAME}[.]* | wc -l` -gt 1 ]; then
-				eerror "More than one possible guest vm images found. Please check your config (${CONF_PATH})"
+				eerror "Multiple images found. ${default_msg}"
 				return 1
 			else
 				VM_IMAGE="`ls ${VM_IMAGE}/${VM_NAME}[.]*`"
-				ewarn " VM-Image set to ${VM_IMAGE}"
+				ewarn " ** VM-Image set to ${VM_IMAGE}"
 			fi
 		elif ! [ -e "${VM_IMAGE}" ]; then
-			eerror "VM-Image not found. Please check your config (${CONF_PATH})"
+			eerror "VM-Image not found. ${default_msg}"
 			return 1
 		fi
 		# check if image is already running
@@ -222,11 +223,11 @@ cfgcheck(){
 				# check bridge device
 				if [ -n "${BRDEV}" ]; then
 					if ! (${IP} link show ${BRDEV} > /dev/null 2>&1); then
-						eerror "${BRDEV} dosen't exist. Please check your config (${CONF_PATH})"
+						eerror "${BRDEV} dosen't exist. ${default_msg}"
 						return 1
 					fi
 				else
-					eerror "You need a bridge device! Please check your config (${CONF_PATH})"
+					eerror "You need a bridge device! ${default_msg}"
 					return 1
 				fi
 				# get the guest_nummber for qtap...
@@ -244,7 +245,7 @@ cfgcheck(){
 				[ -z "${BRDEV}" ] && VM_REMOTE_ACCESS_LISTEN_IP="127.0.0.1"
 				if [ -n "${BRDEV}" ]; then
 					if ! (${IP} link show ${BRDEV} > /dev/null 2>&1); then
-						ewarn " ${BRDEV} dosen't exist. Remote Access set to 127.0.0.1"
+						ewarn " ** ${BRDEV} dosen't exist. Remote Access set to 127.0.0.1"
 						VM_REMOTE_ACCESS_LISTEN_IP="127.0.0.1"
 					fi
 				fi
@@ -277,11 +278,11 @@ cfgcheck(){
 			VM_REMOTE_ACCESS_PORT="580${port_nr}"
 		# check port if it was manuel set
 		elif $(netstat -nat | egrep "${VM_REMOTE_ACCESS_LISTEN_IP}:${VM_REMOTE_ACCESS_PORT}[^0-9]" >/dev/null); then
-			eerror "Port is already in use. Please choose an different one in ${CONF_PATH}"
+			eerror "Port is already in use. ${default_msg}"
 			return 1
 		fi
 	else
-		ewarn " Remote access disabled"
+		ewarn " ** Remote access disabled"
 		VM_DISPLAY=""
 	fi
 
