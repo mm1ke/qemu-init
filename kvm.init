@@ -80,7 +80,7 @@ tapdel(){
 	else
 		for active_qtap in `${BRCTL} show|egrep qtap`; do
 			if scan_running_vm "ifname=${active_qtap}"; then
-				stop_id=${active_qtap:4}
+				stop_id="$(echo ${active_qtap} | tail -c 2)"
 				stop_tap_device
 			fi
 		done
