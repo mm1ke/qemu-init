@@ -157,14 +157,6 @@ cfgcheck(){
 			# default security model none
 			if [ -z ${share_secm} ]; then
 				share_secm="none"
-			else
-				case "${share_secm}" in
-					none|NONE|mapped|MAPPED|passthrough|PASSTHROUGH) ;;
-					*)
-						ewarn " ** 9P(${share_name}): Unknown Security Mode - Setting default none"
-						share_secm="none"
-						;;
-				esac
 			fi
 			VM_9P="${VM_9P} ${share_name}:${share_path}:${share_secm}"
 		done
