@@ -112,6 +112,7 @@ cfgcheck(){
 	fi
 
 	if [ -n "${VM_KERNEL}" ] && [ -n "${VM_INITRD}" ]; then
+		# if vm_kernel/im_initrd is used, guest can't from other devices
 		VM_BOOT_DEV=""
 	else
 		VM_KERNEL=""
