@@ -36,14 +36,14 @@ NC="/usr/bin/nc" # net-analyzer/netcat6
 PID_DIR="/var/run/kvm"
 TMP_DIR="/var/tmp"
 # max supported vms
-MAX_VMS=30
+MAX_QTAP=30
 
-FS_SHARING_9P=false
 # true/false
 DEBUG=false
 
 VM_NAME=${RC_SVCNAME#*.}
 CONF_PATH="/etc/conf.d/kvm.${VM_NAME}"
+
 
 depend(){
 	need net
@@ -80,8 +80,8 @@ tapdel(){
 	else
 		for active_qtap in `${BRCTL} show|egrep qtap`; do
 			if scan_running_vm "ifname=${active_qtap}"; then
-				stop_id="$(echo ${active_qtap} | tail -c 2)"
-				stop_tap_device
+				local stop_id="$(echo ${active_qtap} | tail -c 2)"
+				stop_tap_device ${stop_id}
 			fi
 		done
 	fi
@@ -92,6 +92,14 @@ tapdel(){
 # make some configuration checks
 #
 cfgcheck(){
+	#create hw lists
+	local _vm_9pshare="${VM_9P_SHARE} ${VM_9P_SHARE1} ${VM_9P_SHARE2} ${VM_9P_SHARE3} ${VM_9P_SHARE4} \
+		${VM_9P_SHARE5} ${VM_9P_SHARE6} ${VM_9P_SHARE7} ${VM_9P_SHARE8} ${VM_9P_SHARE9}"
+	local _vm_harddisk="${VM_HARDDISK} ${VM_HARDDISK1} ${VM_HARDDISK2} ${VM_HARDDISK3} ${VM_HARDDISK4} \
+		${VM_HARDDISK5} ${VM_HARDDISK6} ${VM_HARDDISK7} ${VM_HARDDISK8} ${VM_HARDDISK9}"
+	local _vm_interfaces="${VM_NETWORK} ${VM_NETWORK1} ${VM_NETWORK2} ${VM_NETWORK3} ${VM_NETWORK4} \
+		${VM_NETWORK5} ${VM_NETWORK6} ${VM_NETWORK7} ${VM_NETWORK8} ${VM_NETWORK9}"
+
 	local default_msg="Please check your config (${CONF_PATH})"
 
 	# basic tests/settings
@@ -136,132 +144,140 @@ cfgcheck(){
 	fi
 
 	# 9P directory check
-	if [ -n "${VM_9P_PATH}" ]; then
-		for single_9p in ${VM_9P_PATH}; do
-			local share_name="`echo ${single_9p%%:*}`"
-			local share_path="`echo ${single_9p##*:}`"
+	if [ -n "${_vm_9pshare}" ]; then
+		for single_9p in ${_vm_9pshare}; do
+			local share_name="$(echo ${single_9p}|cut -d: -f1)"
+			local share_path="$(echo ${single_9p}|cut -d: -f2)"
+			local share_secm="$(echo ${single_9p}|cut -d: -f3)"
+			
 			if [ -z ${share_name} ] || ! [ -e ${share_path} ]; then
-				eerror "Name not given or Path does not exist. ${default_msg}"
+				eerror "No name given or Path does not exist. ${default_msg}"
 				return 1
-			else
-				FS_SHARING_9P=true
 			fi
+			# default security model none
+			if [ -z ${share_secm} ]; then
+				share_secm="none"
+			else
+				case "${share_secm}" in
+					none|NONE|mapped|MAPPED|passthrough|PASSTHROUGH) ;;
+					*)
+						ewarn " ** 9P(${share_name}): Unknown Security Mode - Setting default none"
+						share_secm="none"
+						;;
+				esac
+			fi
+			VM_9P="${VM_9P} ${share_name}:${share_path}:${share_secm}"
 		done
-		
-		# default security model none
-		if [ -z ${VM_9P_SEC_MODE} ]; then
-			VM_9P_SEC_MODE="none"
-		else
-			case "${VM_9P_SEC_MODE}" in
-				none|NONE|mapped|MAPPED|passthrough|PASSTHROUGH) ;;
-				*)
-					ewarn " ** 9P: Unknown Security Mode - Setting default none"
-					VM_9P_SEC_MODE="none"
-					;;
-			esac
-		fi
-
-
 	fi
 
 	# image checks/default settings
-	if (${VM_ENABLE_HARDDISK}); then
-		if [ -z "${VM_IMAGE}" ]; then
-			eerror "No vm-image set. ${default_msg}"
-			return 1
-		fi
+	if [ -n "${_vm_harddisk}" ]; then
+		for single_hd in ${_vm_harddisk}; do
+			local hd_path="$(echo ${single_hd}|cut -d: -f1)"
+			local hd_if="$(echo ${single_hd}|cut -d: -f2)"
+			local hd_cache="$(echo ${single_hd}|cut -d: -f3)"
+			local hd_aio="$(echo ${single_hd}|cut -d: -f4)"
 
-		if [ -d "${VM_IMAGE}" ]; then
-			if [ -e "${VM_IMAGE}/${VM_NAME}" ]; then
-				VM_IMAGE="${VM_IMAGE}/${VM_NAME}"
-			elif [ `ls ${VM_IMAGE}${VM_NAME}[.]* | wc -l` -gt 1 ]; then
-				eerror "Multiple images found. ${default_msg}"
-				return 1
-			else
-				VM_IMAGE="`ls ${VM_IMAGE}/${VM_NAME}[.]*`"
-				ewarn " ** VM-Image set to ${VM_IMAGE}"
+			if [ -z "${hd_path}" ] || [ -e "${hd_path}" ]; then
+				ewarn " ** ${hd_path} not found. ${default_msg}"
+				continue
 			fi
-		elif ! [ -e "${VM_IMAGE}" ]; then
-			eerror "VM-Image not found. ${default_msg}"
-			return 1
-		fi
-		# check if image is already running
-		if ! scan_running_vm "${VM_IMAGE}"; then
-			eerror "This vm-image is already started by \"/etc/init.d/kvm.${match_vm##*/}\"!"
-			return 1
-		fi
-		# set default settings for hd if nothing is set
-		[ -z "${VM_IMG_CACHE}" ] && VM_IMG_CACHE="none"
-		[ -z "${VM_IMG_IF}" ] && VM_IMG_IF="ide"
-		[ -z "${VM_IMG_AIO}" ] && VM_IMG_AIO="threads"
-		# set image format to raw if lvm partition is used
-		[ -b "${VM_IMAGE}" ] && VM_IMAGE="${VM_IMAGE},format=raw"
+			# check if image is already running
+			if ! scan_running_vm "${hd_path}"; then
+				eerror "This vm-image is already started by \"/etc/init.d/kvm.${match_vm##*/}\"!"
+				return 1
+			fi
+			# set default settings for hd if nothing is set
+			[ -z "${hd_cache}" ] && hd_cache="none"
+			[ -z "${hd_if}" ] && hd_if="ide"
+			[ -z "${hd_aio}" ] && hd_aio="threads"
+			# set image format to raw if lvm partition is used
+			[ -b "${hd_path}" ] && hd_path="${hd_path},format=raw"
+
+			VM_HD="${VM_HD} ${hd_path}:${hd_if}:${hd_cache}:${hd_aio}"
+		done
 	fi
 
 	# network checks/default settings
-	if [ -z "${VM_NET_TYP}" ]; then
-		VM_NET_TYP="none"
+	if [ -z "${_vm_interfaces}" ]; then
+		VM_REMOTE_ACCESS_LISTEN_IP="127.0.0.1"
 	else
-		# set default network driver
-		[ -z "${VM_NET_DRV}" ] && VM_NET_DRV="rtl8139"
-		# check for mac address
-		if [ -n "${VM_MAC_ADDRESS}" ]; then
-			if ! scan_running_vm "${VM_MAC_ADDRESS}"; then
-				eerror "MAC-address already used by \"/etc/init.d/kvm.${match_vm##*/}\"!"
-				return 1
-			fi
-		else
-			# set random mac address
-			VM_MAC_ADDRESS="`printf 'DE:AD:CA:5E:%02X:%02X\n' \
-				$(($(dd if=/dev/urandom count=1 2> /dev/null | cksum | cut -d' ' -f1) % 256)) \
-				$(($(dd if=/dev/urandom count=1 2> /dev/null | cksum | cut -d' ' -f1) % 256))`"
-			ewarn " ** RANDOM MAC ADDRESS! Address will be lost on shutdown! **"
-		fi
+		for single_net in ${_vm_interfaces}; do
+			local net_typ="$(echo ${single_net}|cut -d: -f1)"
+			local net_mac="$(echo ${single_net}|cut -d: -f2)"
+			local net_drv="$(echo ${single_net}|cut -d: -f3)"
 
-		case ${VM_NET_TYP} in
-			tap)
-				# check bridge device
-				if [ -n "${BRDEV}" ]; then
-					if ! (${IP} link show ${BRDEV} > /dev/null 2>&1); then
-						eerror "${BRDEV} dosen't exist. ${default_msg}"
+			# set default network driver
+			[ -z "${net_drv}" ] && net_drv="rtl8139"
+			# check for mac address
+			if [ -n "${net_mac}" ]; then
+				if ! scan_running_vm "${net_mac}"; then
+					eerror "MAC-address already used by \"/etc/init.d/kvm.${match_vm##*/}\"!"
+					return 1
+				fi
+			else
+				# set random mac address
+				net_mac="`printf 'DE:AD:CA:5E:%02X:%02X\n' \
+					$(($(dd if=/dev/urandom count=1 2> /dev/null | cksum | cut -d' ' -f1) % 256)) \
+					$(($(dd if=/dev/urandom count=1 2> /dev/null | cksum | cut -d' ' -f1) % 256))`"
+				ewarn " ** RANDOM MAC ADDRESS! Address will be lost on shutdown! **"
+			fi
+
+			case ${net_typ} in
+				tap)
+					net_tap_set=true
+					# check bridge device
+					if [ -n "${BRDEV}" ]; then
+						if ! (${IP} link show ${BRDEV} > /dev/null 2>&1); then
+							eerror "${BRDEV} dosen't exist. ${default_msg}"
+							return 1
+						fi
+					else
+						eerror "You need a bridge device! ${default_msg}"
 						return 1
 					fi
-				else
-					eerror "You need a bridge device! ${default_msg}"
-					return 1
-				fi
-				# get the guest_nummber for qtap...
-				start_id=0;
-				while (${BRCTL} show | egrep qtap${start_id} >/dev/null 2>&1); do
-					start_id=$(expr ${start_id} + 1)
-				done
-				# check for max_vms
-				if [ ${start_id} -ge ${MAX_VMS} ]; then
-					eerror "Maximum number of vm's reached. Please increase the MAX_VMS variable."
-					return 1
-				fi
-				;;
-			user)
-				[ -z "${BRDEV}" ] && VM_REMOTE_ACCESS_LISTEN_IP="127.0.0.1"
-				if [ -n "${BRDEV}" ]; then
-					if ! (${IP} link show ${BRDEV} > /dev/null 2>&1); then
-						ewarn " ** ${BRDEV} dosen't exist. Remote Access set to 127.0.0.1"
-						VM_REMOTE_ACCESS_LISTEN_IP="127.0.0.1"
+					# get the guest_nummber for qtap...
+					local id=0;
+					while (${BRCTL} show | egrep qtap${id} >/dev/null 2>&1); do
+						id=$(expr ${id} + 1)
+					done
+					# check for max_vms
+					if [ ${id} -ge ${MAX_QTAP} ]; then
+						eerror "Maximum number of network connections reached. Please increase the MAX_QTAP variable."
+						return 1
 					fi
+					;;
+				user)
+					if (${net_user_set}); then
+						eerror "Network typ user can only be used once. ${default_msg}"
+						return 1
+					fi
+					id="user_net"
+					net_user_set=true
+					;;
+				*)
+					ewarn "** Unknow Network Typ. Network will be disabled"
+					continue
+					;;
+			esac
+
+			VM_NET="${VM_NET} ${net_typ}:${net_mac}:${net_drv}:${id}"
+
+		done
+
+		if (${net_user_set}) && ! (${net_tap_set}); then
+			[ -z "${BRDEV}" ] && VM_REMOTE_ACCESS_LISTEN_IP="127.0.0.1"
+			if [ -n "${BRDEV}" ]; then
+				if ! (${IP} link show ${BRDEV} > /dev/null 2>&1); then
+					ewarn " ** ${BRDEV} dosen't exist. Remote Access set to 127.0.0.1"
+					VM_REMOTE_ACCESS_LISTEN_IP="127.0.0.1"
 				fi
-				;;
-			none)
-				VM_REMOTE_ACCESS_LISTEN_IP="127.0.0.1"
-				;;
-			*)
-				ewarn "** Unknow Network Typ. Network will be disabled"
-				VM_NET_TYP="none"
-				;;
-		esac
+			fi
+		fi
 	fi
 
 	# remote access checks
-	if (${VM_ENABLE_REOMTE_ACCESS}); then
+	if [ -n "${VM_REMOTE_ACCESS}" ]; then
 		# set listening ip
 		if [ -z "${VM_REMOTE_ACCESS_LISTEN_IP}" ]; then
 			VM_REMOTE_ACCESS_LISTEN_IP="`${IP} address show ${BRDEV} \
@@ -329,28 +345,9 @@ myconfig(){
 	(${VM_ENABLE_QGA}) && myconfig="${myconfig} -device virtio-serial \
 		-chardev socket,path=${PID_DIR}/${VM_NAME}-qga.sock,server,nowait,id=${VM_NAME}-qga \
 		-device virtserialport,chardev=${VM_NAME}-qga,name=org.qemu.guest_agent.0"
-	# enable/disable harddisk
-	(${VM_ENABLE_HARDDISK}) && myconfig="${myconfig} \
-		-drive file=${VM_IMAGE},if=${VM_IMG_IF},cache=${VM_IMG_CACHE},aio=${VM_IMG_AIO}"
 
-	# network settings
-	case ${VM_NET_TYP} in
-		tap)
-			myconfig="${myconfig} \
-				-netdev tap,id="${VM_NAME}_${start_id}",ifname=qtap${start_id},script=no,downscript=no \
-				-device ${VM_NET_DRV},netdev="${VM_NAME}_${start_id}",mac=${VM_MAC_ADDRESS}"
-			;;
-		user)
-			myconfig="${myconfig} \
-				-netdev user,id=${VM_NAME}_${start_id} \
-				-device ${VM_NET_DRV},netdev="${VM_NAME}_${start_id}",mac=${VM_MAC_ADDRESS}"
-			;;
-		none)
-			myconfig="${myconfig} -net none"
-			;;
-	esac
-
-	if (${VM_ENABLE_REOMTE_ACCESS}); then
+	# remote access settings
+	if [ -n "${VM_REMOTE_ACCESS}" ]; then
 		case ${VM_REMOTE_ACCESS} in
 			spice|SPICE)
 				VM_DISPLAY="qxl"
@@ -373,13 +370,53 @@ myconfig(){
 		myconfig="${myconfig} -nographic"
 	fi
 
-	if (${FS_SHARING_9P}); then
-		local id=0
-		for share in ${VM_9P_PATH}; do
-			local share_name="`echo ${share%%:*}`"
-			local share_path="`echo ${share##*:}`"
+	# enable/disable harddisks
+	if [ -n "${VM_HD}" ]; then
+		for single_hd in ${VM_HD}; do
+			local hd_path="$(echo ${single_hd}|cut -d: -f1)"
+			local hd_if="$(echo ${single_hd}|cut -d: -f2)"
+			local hd_cache="$(echo ${single_hd}|cut -d: -f3)"
+			local hd_aio="$(echo ${single_hd}|cut -d: -f4)"
+
 			myconfig="${myconfig} \
-				-fsdev local,id="${VM_NAME}_9p_${id}",path="${share_path}",security_model="${VM_9P_SEC_MODE}" \
+			-drive file=${hd_path},if=${hd_if},cache=${hd_cache},aio=${hd_aio}"
+		done
+	fi
+
+	# network settings
+	if [ -n "${VM_NET}" ]; then
+		for single_net in ${VM_NET}; do
+			local net_typ="$(echo ${single_net}|cut -d: -f1)"
+			local net_mac="$(echo ${single_net}|cut -d: -f2)"
+			local net_drv="$(echo ${single_net}|cut -d: -f3)"
+			local net_id="$(echo ${single_net}|cut -d: -f4)"
+
+			case ${net_typ} in
+				tap)
+					myconfig="${myconfig} \
+						-netdev tap,id="${VM_NAME}_${net_id}",ifname=qtap${net_id},script=no,downscript=no \
+						-device ${net_drv},netdev="${VM_NAME}_${net_id}",mac=${net_mac}"
+					;;
+				user)
+					myconfig="${myconfig} \
+						-netdev user,id=${VM_NAME}_${net_id} \
+						-device ${net_drv},netdev="${VM_NAME}_${net_id}",mac=${net_mac}"
+					;;
+			esac
+		done
+	else
+		myconfig="${myconfig} -net none"
+	fi
+
+
+	if [ -n "${VM_9P}" ]; then
+		local id=0
+		for single_9p in ${VM_9P}; do
+			local share_name="$(echo ${single_9p}|cut -d: -f1)"
+			local share_path="$(echo ${single_9p}|cut -d: -f2)"
+			local share_secm="$(echo ${single_9p}|cut -d: -f3)"
+			myconfig="${myconfig} \
+				-fsdev local,id="${VM_NAME}_9p_${id}",path="${share_path}",security_model="${share_secm}" \
 				-device virtio-9p-pci,fsdev="${VM_NAME}_9p_${id}",mount_tag="${share_name}""
 			id=$(expr ${id} + 1)
 		done
@@ -403,26 +440,9 @@ myconfig(){
 	fi
 }
 
-#
-# start_tap_device()
-# function to find out the tap id
-#
-start_tap_device(){
-	einfo "Setting up the tap interface: qtap${start_id}"
-	${IP} tuntap add dev qtap${start_id} mode tap user ${VM_USER} || return 1
-
-	einfo " Linking the bridge interface with qtap${start_id}"
-	${BRCTL} addif ${BRDEV} qtap${start_id} || return 1
-
-	einfo " Bring qtap${start_id} interface up"
-	${IP} link set dev qtap${start_id} up promisc on || return 1
-}
-
-#
-# stop_tap_device()
-# function to find the vm's tap device and stop it
-#
 stop_tap_device(){
+	local stop_id=${1}
+
 	einfo "Bring qtap${stop_id} interface down"
 	${IP} link set dev qtap${stop_id} down
 	eend $? "Failed to bring qtap${stop_id} down"
@@ -436,10 +456,6 @@ stop_tap_device(){
 	${IP} tuntap del qtap${stop_id} mode tap
 }
 
-#
-# start()
-# starts the vm
-#
 start(){
 	local qemu_bin
 
@@ -455,15 +471,33 @@ start(){
 
 	cfgcheck || return 1
 	myconfig || return 1
-	[ ${VM_NET_TYP} = "tap" ] && start_tap_device
+	if [ -n "${VM_NET}" ]; then
+		for single_net in ${VM_NET}; do
+			local net_typ="$(echo ${single_net}|cut -d: -f1)"
+			local net_id="$(echo ${single_net}|cut -d: -f4)"
+	
+			if [ ${net_typ} = "tap" ]; then
+				tap_enabled=true
+				einfo "Setting up the tap interface: qtap${start_id}"
+				${IP} tuntap add dev qtap${start_id} mode tap user ${VM_USER} || return 1
+				einfo " Linking the bridge interface with qtap${start_id}"
+				${BRCTL} addif ${BRDEV} qtap${start_id} || return 1
+				einfo " Bring qtap${start_id} interface up"
+				${IP} link set dev qtap${start_id} up promisc on || return 1
+			fi
+		done
+	fi
 
+	# print some important information
 	ebegin "Starting ${VM_NAME}..."
-	(${VM_ENABLE_REOMTE_ACCESS}) && ebegin " remote access via ${VM_REMOTE_ACCESS} on ${VM_REMOTE_ACCESS_LISTEN_IP}:${VM_REMOTE_ACCESS_PORT}"
-	if ${FS_SHARING_9P}; then
-		for share in ${VM_9P_PATH}; do
-			local share_name="`echo ${share%%:*}`"
-			local share_path="`echo ${share##*:}`"
-			ebegin " Shared Folder: ${share_path} Shared Name: ${share_name}"
+	[ -n "${VM_REMOTE_ACCESS}" ] && ebegin " remote access via ${VM_REMOTE_ACCESS} on ${VM_REMOTE_ACCESS_LISTEN_IP}:${VM_REMOTE_ACCESS_PORT}"
+	if [ -n "${VM_9P}" ]; then
+		ebegin " Enabled shared folders:"
+		for single_9p in ${VM_9P}; do
+			local share_name="$(echo ${single_9p}|cut -d: -f1)"
+			local share_path="$(echo ${single_9p}|cut -d: -f2)"
+			local share_secm="$(echo ${single_9p}|cut -d: -f3)"
+			ebegin "  == ${share_path} / ${share_name} / ${share_secm}"
 		done
 	fi
 
@@ -472,13 +506,10 @@ start(){
 		tmpdir: ${TMP_DIR}\n\t \
 		user: ${VM_USER}\n\t \
 		memory: ${VM_MEMORY} \n\t \
-		image: ${VM_IMAGE}\n\t \
 		kernel: ${VM_KERNEL}\n\t \
 		kernel cmd: ${VM_APPEND}\n\t \
 		initrd: ${VM_INITRD}\n\t \
-		network-typ: ${VM_NET_TYP}\n\t \
 		bridge device: ${BRDEV}\n\t \
-		qtap-interface: qtap${start_id}\n\t \
 		remote-access-port: ${VM_REMOTE_ACCESS_PORT}\n\t \
 		remote-access-typ: ${VM_REMOTE_ACCESS}\n\t \
 		boot from: ${VM_BOOT_DEV}\n\t \
@@ -492,10 +523,13 @@ start(){
 
 	# remove tap devices if the guest system couldn't be started
 	if [ "$?" != "0" ]; then
-		if [ "${VM_NET_TYP}" = "tap" ]; then
-			eerror "Failed to start ${VM_NAME}, shuting down qtap${start_id}"
-			stop_id=${start_id}
-			stop_tap_device || return 1
+		if (${tap_enabled}); then
+			eerror "Failed to start ${VM_NAME}, shuting down qtap devices"
+			for single_net in ${VM_NET}; do
+				local net_typ="$(echo ${single_net}|cut -d: -f1)"
+				local net_id="$(echo ${single_net}|cut -d: -f4)"
+				[ ${net_typ} = "tap" ] && stop_tap_device ${net_id}
+			done
 		fi
 		return 1
 	fi
@@ -514,14 +548,10 @@ stop(){
 	local KVM_PID="`cat ${PID_DIR}/${VM_NAME}.pid`"
 
 	if (ps -p ${KVM_PID} --no-heading >/dev/null 2>&1); then
-		# set VM_NET_TYP to none if the var is empty, otherwise the below test would fail if the var would be empty
-		[ -z "${VM_NET_TYP}" ] && VM_NET_TYP="none"
-		# find the next free qtap interface
-		if [ ${VM_NET_TYP} = "tap" ]; then
-			# filter last 2 chars (the last one is a new line and doesn't matter)
-			stop_id=`ps -o "command=" ${KVM_PID}|grep -o qtap. |tail -c 2`
-			[ -z ${stop_id} ] &&  ewarn "Couldn't find a qtap device. Please run \"/etc/init.d/kvm.init tapdel\""
-		fi
+		# find all linked qtap devices
+		for id in $(ps -o "command=" ${KVM_PID} | grep -o qtap.); do
+			local stop_id="${stop_id} $(echo ${id}|tail -c 2)"
+		done
 
 		ebegin "Stopping ${VM_NAME}"
 		# sending via nc (netcat) the shutdown command
@@ -544,6 +574,13 @@ stop(){
 			printf "."
 		done
 		echo
+		for tap_id in ${stop_id}; do
+			if ! $(${BRCTL} show|grep qtap${tap_id} >/dev/null); then
+				ewarn "Couldn't find a qtap device. Please run \"/etc/init.d/kvm.init tapdel\""
+				continue
+			fi
+			stop_tap_device ${tap_id}
+		done
 		# stop qtap device
 		[ -z "${stop_id}" ] || stop_tap_device
 
