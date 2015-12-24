@@ -355,11 +355,13 @@ myconfig(){
 			spice|SPICE)
 				VM_DISPLAY="qxl"
 				[ -n "${VM_REMOTE_ACCESS_PW}" ] || VM_REMOTE_ACCESS_PW="\"\",disable-ticketing"
-				myconfig="${myconfig} -spice port=${VM_REMOTE_ACCESS_PORT},addr=${VM_REMOTE_ACCESS_LISTEN_IP},password=${VM_REMOTE_ACCESS_PW}"
+				myconfig="${myconfig} -spice \
+					port=${VM_REMOTE_ACCESS_PORT},addr=${VM_REMOTE_ACCESS_LISTEN_IP},password=${VM_REMOTE_ACCESS_PW}"
 				;;
 			vnc|VNC)
 				VM_REMOTE_ACCESS_PORT=$(expr ${VM_REMOTE_ACCESS_PORT} - 5800)
-				myconfig="${myconfig} -vnc ${VM_REMOTE_ACCESS_LISTEN_IP}:${VM_REMOTE_ACCESS_PORT}"
+				myconfig="${myconfig} \
+					-vnc ${VM_REMOTE_ACCESS_LISTEN_IP}:${VM_REMOTE_ACCESS_PORT}"
 				;;
 			*)
 				ewarn " Unknow option. Remote access will be disabled"
@@ -486,7 +488,8 @@ start(){
 	# print some important information
 	ebegin "Starting ${VM_NAME}..."
 	if [ -n "${VM_REMOTE_ACCESS}" ]; then
-		[ "$(echo ${VM_REMOTE_ACCESS}|cut -d';' -f1)" = vnc ] && VM_REMOTE_ACCESS_PORT=$(expr ${VM_REMOTE_ACCESS_PORT} + 5900)
+		[ "$(echo ${VM_REMOTE_ACCESS}|cut -d';' -f1)" = vnc ] && \
+			VM_REMOTE_ACCESS_PORT=$(expr ${VM_REMOTE_ACCESS_PORT} + 5900)
 		ebegin " remote access via $(echo ${VM_REMOTE_ACCESS} | cut -d';' -f1) on ${VM_REMOTE_ACCESS_LISTEN_IP}:${VM_REMOTE_ACCESS_PORT}"
 	fi
 	if [ -n "${VM_9P}" ]; then
