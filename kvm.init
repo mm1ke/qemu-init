@@ -28,7 +28,7 @@ extra_commands="tapdel"
 description="Start Qemu guests"
 description_tapdel="Deletes unused tap devices (like from a crashed guest)"
 
-# programs - packages / depends
+# programs / dependencies
 BRCTL="/sbin/brctl" # net-misc/bridge-utils
 IP="/bin/ip" # sys-apps/iproute2
 NC="/usr/bin/nc" # net-analyzer/netcat6
@@ -49,10 +49,6 @@ depend(){
 	need net
 }
 
-#
-# scan_running_vm()
-# checks other vms
-#
 scan_running_vm(){
 	local running_vm
 	local running_vm_pid
@@ -68,10 +64,6 @@ scan_running_vm(){
 	done
 }
 
-#
-# tapdel()
-# removes unused tap devices
-#
 tapdel(){
 	local active_qtap
 	# BRDEV must be set in kvm.$vmname
@@ -87,10 +79,6 @@ tapdel(){
 	fi
 }
 
-#
-# cfgcheck()
-# make some configuration checks
-#
 cfgcheck(){
 	#create hw lists
 	local _vm_9pshare="${VM_9P_SHARE} ${VM_9P_SHARE1} ${VM_9P_SHARE2} ${VM_9P_SHARE3} ${VM_9P_SHARE4} \
@@ -147,7 +135,7 @@ cfgcheck(){
 		fi
 	fi
 
-	# 9P directory check
+	# 9P directory checks
 	if [ -n "${_vm_9pshare}" ]; then
 		for single_9p in ${_vm_9pshare}; do
 			local share_name="$(echo ${single_9p}|cut -d';' -f1)"
@@ -310,10 +298,6 @@ cfgcheck(){
 	fi
 }
 
-#
-# myconfig()
-# function to generate the start config
-#
 myconfig(){
 
 	# basic config
@@ -538,10 +522,6 @@ start(){
 	eend $?
 }
 
-#
-# stop()
-# stopping the vm
-#
 stop(){
 	# set default kill wait to 80 seconds
 	[ -z "${VM_KILL_WAIT}" ] && VM_KILL_WAIT=80
