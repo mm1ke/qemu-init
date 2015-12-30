@@ -97,9 +97,11 @@ cfgcheck(){
 	[ -d ${PID_DIR} ] || mkdir ${PID_DIR}
 	[ -d ${TMP_DIR} ] || TMP_DIR="/var/tmp"
 
-	if ! [ `egrep -i "^${VM_USER}" /etc/passwd` ]; then
-		eerror "User \"${VM_USER}\" not found in /etc/passwd. ${default_msg}"
-		return 1
+	if [ -n "${VM_USER}" ]; then
+		if ! [ `egrep -i "^${VM_USER}" /etc/passwd` ]; then
+			eerror "User \"${VM_USER}\" not found in /etc/passwd. ${default_msg}"
+			return 1
+		fi
 	fi
 
 	if [ -n "${VM_KERNEL}" ] && [ -n "${VM_INITRD}" ]; then
@@ -302,11 +304,11 @@ myconfig(){
 
 	# basic config
 	myconfig="-name ${VM_NAME} \
-		-runas ${VM_USER} \
 		-monitor unix:${PID_DIR}/${VM_NAME}.sock,server,nowait \
 		-pidfile ${PID_DIR}/${VM_NAME}.pid"
 
 	# if nothing is set, qemu defaults to 128mb memory and smp=1
+	[ -z "${VM_USER}" ] || myconfig="${myconfig} -runas ${VM_USER}"
 	[ -z "${VM_MEMORY}" ] || myconfig="${myconfig} -m ${VM_MEMORY}"
 	[ -z "${VM_SMP}" ] || myconfig="${myconfig} -smp ${VM_SMP}"
 	[ -z "${VM_MACHINE}" ] || myconfig="${myconfig} -machine ${VM_MACHINE}"
