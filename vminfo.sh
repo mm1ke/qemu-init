@@ -30,7 +30,6 @@ NC="/usr/bin/nc" # net-analyzer/netcat6
 
 PID_DIR="/var/run/kvm"
 TMP_DIR="/var/tmp"
-CONF_PATH="/etc/conf.d/kvm.${VM_NAME}"
 
 #
 # info()
