@@ -451,6 +451,19 @@ reboot(){
 	if $(${AVAILABLE_QGA}); then
 		if [ -e ${PID_DIR}/${VMNAME}-qga.sock ]; then
 			# add right command for reboot
+			${QGA} --address=${PID_DIR}/${VMNAME}-qga.sock reboot
+		else
+			ewarn " WARNING: guest agent not active for ${VMNAME}"
+		fi
+	else
+		ewarn " WARNING: qemu guest agent not available."
+	fi
+}
+
+freeze(){
+	if $(${AVAILABLE_QGA}); then
+		if [ -e ${PID_DIR}/${VMNAME}-qga.sock ]; then
+			# add right command for reboot
 			echo "reboot"
 		else
 			ewarn " WARNING: guest agent not active for ${VMNAME}"
