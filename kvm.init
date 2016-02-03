@@ -34,7 +34,7 @@ description_freeze="freezes/unfreezes the virtual machine"
 BRCTL="/sbin/brctl" # net-misc/bridge-utils
 IP="/bin/ip" # sys-apps/iproute2
 NC="/usr/bin/nc" # net-analyzer/netcat6
-QGA="/path/to/qemu-guest-agent" # app-emulation/qemu[pyhton]
+QGA="/usr/bin/qemu-ga-client" # app-emulation/qemu[pyhton]
 
 PID_DIR="/var/run/kvm"
 TMP_DIR="/var/tmp"
@@ -56,7 +56,7 @@ depend(){
 	need net
 }
 
-scan_running_vm(){
+_scan_running_vm(){
 	local running_vm
 	local running_vm_pid
 
@@ -71,32 +71,16 @@ scan_running_vm(){
 	done
 }
 
-tapdel(){
-	local active_qtap
-	# BRDEV must be set in kvm.$vmname
-	if [ -z "${BRDEV}" ]; then
-		ewarn "No BRDEV is set in ${CONF_PATH}"
-	else
-		for active_qtap in `${BRCTL} show|egrep qtap`; do
-			if scan_running_vm "ifname=${active_qtap}"; then
-				local stop_id="$(echo ${active_qtap} | tail -c 2)"
-				stop_tap_device ${stop_id}
-			fi
-		done
-	fi
-}
+_stop_tap_device(){
+	local stop_id=${1}
 
-reboot(){
-	if $(${AVAILABLE_QGA}); then
-		if [ -e ${PID_DIR}/${VMNAME}-qga.sock ]; then
-			# add right command for reboot
-			echo "reboot"
-		else
-			ewarn " WARNING: guest agent not active for ${VMNAME}"
-		fi
-	else
-		ewarn " WARNING: qemu guest agent not available."
-	fi
+	einfo "Bring qtap${stop_id} interface down"
+	${IP} link set dev qtap${stop_id} down
+	eend $? "Failed to bring qtap${stop_id} down"
+	${BRCTL} delif ${BRDEV} qtap${stop_id}
+	eend $? "Failed to unlink the bridge interface to qtap${stop_id}"
+	sleep 2
+	${IP} tuntap del qtap${stop_id} mode tap
 }
 
 _cfgcheck(){
@@ -189,7 +173,7 @@ _cfgcheck(){
 				return 1
 			fi
 			# check if image is already running
-			if ! scan_running_vm "${hd_path}"; then
+			if ! _scan_running_vm "${hd_path}"; then
 				eerror "This vm-image is already started by \"/etc/init.d/kvm.${match_vm##*/}\"!"
 				return 1
 			fi
@@ -218,7 +202,7 @@ _cfgcheck(){
 			[ -z "${net_drv}" ] && net_drv="rtl8139"
 			# check for mac address
 			if [ -n "${net_mac}" ]; then
-				if ! scan_running_vm "${net_mac}"; then
+				if ! _scan_running_vm "${net_mac}"; then
 					eerror "MAC-address already used by \"/etc/init.d/kvm.${match_vm##*/}\"!"
 					return 1
 				fi
@@ -295,7 +279,7 @@ _cfgcheck(){
 		else
 			VM_REMOTE_ACCESS_LISTEN_IP=${remote_ip}
 		fi
-		# i don't use scan_running_vm here because other programms could use those ports too...
+		# i don't use _scan_running_vm here because other programms could use those ports too...
 		# have to check with netstat if a port is free
 		if [ -z "${remote_port}" ]; then
 			local port_nr=0
@@ -448,16 +432,32 @@ _myconfig(){
 	fi
 }
 
-stop_tap_device(){
-	local stop_id=${1}
+tapdel(){
+	local active_qtap
+	# BRDEV must be set in kvm.$vmname
+	if [ -z "${BRDEV}" ]; then
+		ewarn "No BRDEV is set in ${CONF_PATH}"
+	else
+		for active_qtap in `${BRCTL} show|egrep qtap`; do
+			if _scan_running_vm "ifname=${active_qtap}"; then
+				local stop_id="$(echo ${active_qtap} | tail -c 2)"
+				_stop_tap_device ${stop_id}
+			fi
+		done
+	fi
+}
 
-	einfo "Bring qtap${stop_id} interface down"
-	${IP} link set dev qtap${stop_id} down
-	eend $? "Failed to bring qtap${stop_id} down"
-	${BRCTL} delif ${BRDEV} qtap${stop_id}
-	eend $? "Failed to unlink the bridge interface to qtap${stop_id}"
-	sleep 2
-	${IP} tuntap del qtap${stop_id} mode tap
+reboot(){
+	if $(${AVAILABLE_QGA}); then
+		if [ -e ${PID_DIR}/${VMNAME}-qga.sock ]; then
+			# add right command for reboot
+			echo "reboot"
+		else
+			ewarn " WARNING: guest agent not active for ${VMNAME}"
+		fi
+	else
+		ewarn " WARNING: qemu guest agent not available."
+	fi
 }
 
 start(){
@@ -535,7 +535,7 @@ start(){
 			for single_net in ${VM_NET}; do
 				local net_typ="$(echo ${single_net}|cut -d';' -f1)"
 				local net_id="$(echo ${single_net}|cut -d';' -f4)"
-				[ ${net_typ} = "tap" ] && stop_tap_device ${net_id}
+				[ ${net_typ} = "tap" ] && _stop_tap_device ${net_id}
 			done
 		fi
 		return 1
@@ -590,7 +590,7 @@ stop(){
 				ewarn "Couldn't find a qtap device. Please run \"/etc/init.d/kvm.init tapdel\""
 				continue
 			fi
-			stop_tap_device ${tap_id}
+			_stop_tap_device ${tap_id}
 		done
 
 		# remove remaining files
