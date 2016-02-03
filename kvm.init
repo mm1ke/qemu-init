@@ -23,15 +23,18 @@
 # Discription:
 # start/stop script for qemu guests
 
-extra_commands="tapdel"
+extra_commands="tapdel reboot freeze"
 
 description="Start Qemu guests"
-description_tapdel="Deletes unused tap devices (like from a crashed guest)"
+description_tapdel="deletes unused tap devices (like from a crashed guest)"
+description_reboot="reboots the virtual machine via the qemu guest agent"
+description_freeze="freezes/unfreezes the virtual machine"
 
 # programs / dependencies
 BRCTL="/sbin/brctl" # net-misc/bridge-utils
 IP="/bin/ip" # sys-apps/iproute2
 NC="/usr/bin/nc" # net-analyzer/netcat6
+QGA="/path/to/qemu-guest-agent" # app-emulation/qemu[pyhton]
 
 PID_DIR="/var/run/kvm"
 TMP_DIR="/var/tmp"
@@ -44,6 +47,10 @@ DEBUG=false
 VM_NAME=${RC_SVCNAME#*.}
 CONF_PATH="/etc/conf.d/kvm.${VM_NAME}"
 
+QGA_AVAILABLE=false
+if $(command -v ${QGA} > /dev/null) ; then
+	QGA_AVAILABLE=true
+fi
 
 depend(){
 	need net
@@ -79,7 +86,20 @@ tapdel(){
 	fi
 }
 
-cfgcheck(){
+reboot(){
+	if $(${AVAILABLE_QGA}); then
+		if [ -e ${PID_DIR}/${VMNAME}-qga.sock ]; then
+			# add right command for reboot
+			echo "reboot"
+		else
+			ewarn " WARNING: guest agent not active for ${VMNAME}"
+		fi
+	else
+		ewarn " WARNING: qemu guest agent not available."
+	fi
+}
+
+_cfgcheck(){
 	#create hw lists
 	local _vm_9pshare="${VM_9P_SHARE} ${VM_9P_SHARE1} ${VM_9P_SHARE2} ${VM_9P_SHARE3} ${VM_9P_SHARE4} \
 		${VM_9P_SHARE5} ${VM_9P_SHARE6} ${VM_9P_SHARE7} ${VM_9P_SHARE8} ${VM_9P_SHARE9}"
@@ -300,7 +320,7 @@ cfgcheck(){
 	fi
 }
 
-myconfig(){
+_myconfig(){
 
 	# basic config
 	myconfig="-name ${VM_NAME} \
@@ -454,8 +474,8 @@ start(){
 		exit 1
 	fi
 
-	cfgcheck || return 1
-	myconfig || return 1
+	_cfgcheck || return 1
+	_myconfig || return 1
 	if [ -n "${VM_NET}" ]; then
 		for single_net in ${VM_NET}; do
 			local net_typ="$(echo ${single_net}|cut -d';' -f1)"
@@ -537,6 +557,13 @@ stop(){
 		done
 
 		ebegin "Stopping ${VM_NAME}"
+		if $(${AVAILABLE_QGA}) && [ -e ${PID_DIR}/${VM_NAME}-qga.sock ]; then
+			# sending shutdown via guest agent
+			# add right shutdown command
+			#${QGA} -s ${PID_DIR}/${VM_NAME}-qga.sock shutdown
+			echo shutdown
+		fi
+
 		# sending via nc (netcat) the shutdown command
 		echo "system_powerdown" | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
 		# waiting for system to shutdown
