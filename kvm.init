@@ -219,8 +219,8 @@ _cfgcheck(){
 					net_tap_set=true
 					# check bridge device
 					if [ -n "${BRDEV}" ]; then
-						if ! (${IP} link show ${BRDEV} > /dev/null 2>&1); then
-							eerror "${BRDEV} dosen't exist. ${default_msg}"
+						if ! [ -d /sys/class/net/${BRDEV}/bridge/ ]; then
+							eerror "${BRDEV} is not a bridge device. ${default_msg}"
 							return 1
 						fi
 					else
