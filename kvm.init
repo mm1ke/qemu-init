@@ -539,7 +539,7 @@ start(){
 	# Start the Virtual Machine
 	# start guest with /bin/sh, otherwise qemu breaks with
 	# multiple append statements (probably a qemu or runscript bug)
-	/bin/sh -c "TMPDIR="${TMP_DIR}" ${qemu_bin} ${myconfig} >/dev/null"
+	/bin/sh -c "TMPDIR="${TMP_DIR}" ${qemu_bin} ${myconfig} >/dev/null 2>&1"
 
 	# remove tap devices if the guest system couldn't be started
 	if [ "$?" != "0" ]; then
