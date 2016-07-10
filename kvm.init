@@ -33,7 +33,6 @@ description_memory="Update memory according to config (via ballooing)"
 #description_freeze="freezes/unfreezes the virtual machine"
 
 # programs / dependencies
-BRCTL="/sbin/brctl"		# net-misc/bridge-utils
 BRIDGE="/sbin/bridge" 		# net-misc/iproute2
 IP="/bin/ip"			# sys-apps/iproute2
 NC="/usr/bin/nc"		# net-analyzer/netcat6
@@ -81,7 +80,6 @@ _stop_tap_device(){
 	${IP} link set dev qtap${stop_id} down
 	eend $? "Failed to bring qtap${stop_id} down"
 	${IP} link set qtap${stop_id} nomaster
-	#${BRCTL} delif ${BRDEV} qtap${stop_id}
 	eend $? "Failed to unlink the bridge interface to qtap${stop_id}"
 	sleep 2
 	${IP} tuntap del qtap${stop_id} mode tap
@@ -516,7 +514,6 @@ start(){
 				einfo "Setting up the tap interface: qtap${net_id}"
 				${IP} tuntap add dev qtap${net_id} mode tap user ${VM_USER} || return 1
 				${IP} link set qtap${net_id} master ${BRDEV}
-				#${BRCTL} addif ${BRDEV} qtap${net_id} || return 1
 				${IP} link set dev qtap${net_id} up promisc on || return 1
 			fi
 		done
@@ -588,13 +585,6 @@ stop(){
 		done
 
 		ebegin "Stopping ${VM_NAME}"
-		#if $(${AVAILABLE_QGA}) && [ -e ${PID_DIR}/${VM_NAME}-qga.sock ]; then
-		#	# sending shutdown via guest agent
-		#	# add right shutdown command
-		#	#${QGA} -s ${PID_DIR}/${VM_NAME}-qga.sock shutdown
-		#	echo shutdown
-		#fi
-
 		# sending via nc (netcat) the shutdown command
 		echo "system_powerdown" | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
 		# waiting for system to shutdown
