@@ -4,18 +4,18 @@
 # Autor: Michael Mair-Keimberger (m DOT mairkeimberger AT gmail DOT com)
 # Date: 13.08.2009
 
-# Copyright (C) 2015  Michael Mair-Keimberger
+# Copyright (C) 2016  Michael Mair-Keimberger
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
 # as published by the Free Software Foundation; either version 2
 # of the License, or (at your option) any later version.
-# 
+#
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
-# 
+#
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
@@ -164,7 +164,7 @@ _cfgcheck(){
 			local share_name="$(echo ${single_9p}|cut -d';' -f1)"
 			local share_path="$(echo ${single_9p}|cut -d';' -f2)"
 			local share_secm="$(echo ${single_9p}|cut -d';' -f3)"
-			
+
 			if [ -z ${share_name} ] || ! [ -e ${share_path} ]; then
 				eerror "No name given or Path does not exist. ${default_msg}"
 				return 1
@@ -430,7 +430,6 @@ _myconfig(){
 				-device virtio-9p-pci,fsdev="${VM_NAME}_9p_${id}",mount_tag="${share_name}""
 			id=$(expr ${id} + 1)
 		done
-
 	fi
 
 	[ -z "${VM_USB}" ] || myconfig="${myconfig} -usb ${VM_USB}"
@@ -618,7 +617,6 @@ stop(){
 		rm -rf ${PID_DIR}/${VM_NAME}.pid
 		rm -rf ${PID_DIR}/${VM_NAME}.sock
 		rm -rf ${PID_DIR}/${VM_NAME}-qga.sock
-
 	else
 		ewarn "Couldn't find the process for ${VM_NAME}, guest might already down."
 		eend 0
