@@ -1,4 +1,4 @@
-#!/sbin/runscript
+#!/sbin/openrc-run
 
 # Filename: kvm.init
 # Autor: Michael Mair-Keimberger (m DOT mairkeimberger AT gmail DOT com)
@@ -33,10 +33,11 @@ description_memory="Update memory according to config (via ballooing)"
 #description_freeze="freezes/unfreezes the virtual machine"
 
 # programs / dependencies
-BRCTL="/sbin/brctl" # net-misc/bridge-utils
-IP="/bin/ip" # sys-apps/iproute2
-NC="/usr/bin/nc" # net-analyzer/netcat6
-QGA="/usr/bin/qemu-ga-client" # app-emulation/qemu[pyhton]
+BRCTL="/sbin/brctl"		# net-misc/bridge-utils
+BRIDGE="/sbin/bridge" 		# net-misc/iproute2
+IP="/bin/ip"			# sys-apps/iproute2
+NC="/usr/bin/nc"		# net-analyzer/netcat6
+QGA="/usr/bin/qemu-ga-client"	# app-emulation/qemu[pyhton]
 
 PID_DIR="/var/run/kvm"
 TMP_DIR="/var/tmp"
@@ -79,7 +80,8 @@ _stop_tap_device(){
 	einfo "Bring qtap${stop_id} interface down"
 	${IP} link set dev qtap${stop_id} down
 	eend $? "Failed to bring qtap${stop_id} down"
-	${BRCTL} delif ${BRDEV} qtap${stop_id}
+	${IP} link set qtap${stop_id} nomaster
+	#${BRCTL} delif ${BRDEV} qtap${stop_id}
 	eend $? "Failed to unlink the bridge interface to qtap${stop_id}"
 	sleep 2
 	${IP} tuntap del qtap${stop_id} mode tap
@@ -245,7 +247,7 @@ _cfgcheck(){
 						return 1
 					fi
 					# get the guest_nummber for qtap...
-					while (${BRCTL} show | egrep qtap${id} >/dev/null 2>&1); do
+					while (${BRIDGE} link | egrep -o qtap${id} >/dev/null 2>&1); do
 						id=$(expr ${id} + 1)
 					done
 					# check for max_vms
@@ -456,7 +458,7 @@ tapdel(){
 	if [ -z "${BRDEV}" ]; then
 		ewarn "No BRDEV is set in ${CONF_PATH}"
 	else
-		for active_qtap in `${BRCTL} show|egrep qtap`; do
+		for active_qtap in `${BRIDGE} link|egrep -o qtap.`; do
 			if _scan_running_vm "ifname=${active_qtap}"; then
 				local stop_id="$(echo ${active_qtap} | tail -c 2)"
 				_stop_tap_device ${stop_id}
@@ -513,7 +515,8 @@ start(){
 				tap_enabled=true
 				einfo "Setting up the tap interface: qtap${net_id}"
 				${IP} tuntap add dev qtap${net_id} mode tap user ${VM_USER} || return 1
-				${BRCTL} addif ${BRDEV} qtap${net_id} || return 1
+				${IP} link set qtap${net_id} master ${BRDEV}
+				#${BRCTL} addif ${BRDEV} qtap${net_id} || return 1
 				${IP} link set dev qtap${net_id} up promisc on || return 1
 			fi
 		done
@@ -554,7 +557,7 @@ start(){
 	# Start the Virtual Machine
 	# start guest with /bin/sh, otherwise qemu breaks with
 	# multiple append statements (probably a qemu or runscript bug)
-	/bin/sh -c "TMPDIR="${TMP_DIR}" ${qemu_bin} ${myconfig} >/dev/null 2>&1"
+	/bin/sh -c "TMPDIR="${TMP_DIR}" ${qemu_bin} ${myconfig} >/dev/null"
 
 	# remove tap devices if the guest system couldn't be started
 	if [ "$?" != "0" ]; then
@@ -614,7 +617,7 @@ stop(){
 		echo
 		# remove tap interfaces
 		for tap_id in ${stop_id}; do
-			if ! $(${BRCTL} show|grep qtap${tap_id} >/dev/null); then
+			if ! $(${BRIDGE} link|grep -o qtap${tap_id} >/dev/null); then
 				ewarn "Couldn't find a qtap device. Please run \"/etc/init.d/kvm.init tapdel\""
 				continue
 			fi
