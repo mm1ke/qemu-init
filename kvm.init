@@ -33,7 +33,7 @@ description_memory="Update memory according to config (via ballooing)"
 #description_freeze="freezes/unfreezes the virtual machine"
 
 # programs / dependencies
-BRIDGE="/sbin/bridge" 		# net-misc/iproute2
+BRIDGE="/sbin/bridge" 		# sys-apps/iproute2
 IP="/bin/ip"			# sys-apps/iproute2
 NC="/usr/bin/nc"		# net-analyzer/netcat6
 QGA="/usr/bin/qemu-ga-client"	# app-emulation/qemu[pyhton]
