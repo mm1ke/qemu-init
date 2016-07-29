@@ -111,6 +111,7 @@ _cfgcheck(){
 		fi
 	else
 		VM_USER="nobody"
+		VM_ENABLE_SDL=false
 	fi
 
 	if [ -n "${VM_KERNEL}" ] && [ -n "${VM_INITRD}" ]; then
@@ -291,9 +292,6 @@ _cfgcheck(){
 		else
 			VM_REMOTE_ACCESS_PORT=${remote_port}
 		fi
-	else
-		ewarn " ** Remote access disabled"
-		VM_DISPLAY=""
 	fi
 
 	if (${VM_ENABLE_SNAPSHOTMODE}); then
@@ -335,12 +333,12 @@ _myconfig(){
 	(${VM_ENABLE_QGA}) && myconfig="${myconfig} -device virtio-serial \
 		-chardev socket,path=${PID_DIR}/${SVCNAME}-qga.sock,server,nowait,id=${VM_NAME}-qga \
 		-device virtserialport,chardev=${VM_NAME}-qga,name=org.qemu.guest_agent.0"
+	(${VM_ENABLE_SDL}) && myconfig="${myconfig} -display sdl"
 
 	# remote access settings
 	if [ -n "${VM_REMOTE_ACCESS}" ]; then
 		case "$(echo ${VM_REMOTE_ACCESS}|cut -d';' -f1)" in
 			spice|SPICE)
-				VM_DISPLAY="qxl"
 				[ -n "${VM_REMOTE_ACCESS_PW}" ] || VM_REMOTE_ACCESS_PW="\"\",disable-ticketing"
 				myconfig="${myconfig} -spice \
 					port=${VM_REMOTE_ACCESS_PORT},addr=${VM_REMOTE_ACCESS_LISTEN_IP},password=${VM_REMOTE_ACCESS_PW}"
@@ -350,13 +348,17 @@ _myconfig(){
 				myconfig="${myconfig} \
 					-vnc ${VM_REMOTE_ACCESS_LISTEN_IP}:${VM_REMOTE_ACCESS_PORT}"
 				;;
+			none|NONE)
+				ewarn " ** Remote access disabled"
+				(${VM_ENABLE_SDL}) || VM_DISPLAY=""
+				;;
 			*)
 				ewarn " Unknow option. Remote access will be disabled"
-				myconfig="${myconfig} -nographic"
+				(${VM_ENABLE_SDL}) || myconfig="${myconfig} -nographic"
 				;;
 		esac
 	else
-		myconfig="${myconfig} -nographic"
+		(${VM_ENABLE_SDL}) || myconfig="${myconfig} -nographic"
 	fi
 
 	# enable/disable harddisks
@@ -502,6 +504,7 @@ start(){
 			ebegin "  ${share_path} via ${share_name}(${share_secm})"
 		done
 	fi
+#	(${VM_ENABLE_SDL}) && export DISPLAY=:0 XAUTHORITY=/home/${VM_USER}/.Xauthority
 
 	(${DEBUG}) && printf "* Qemu settings:\n\t \
 		qemu-bin: ${qemu_bin}\n\t \
@@ -521,7 +524,13 @@ start(){
 	# Start the Virtual Machine
 	# start guest with /bin/sh, otherwise qemu breaks with
 	# multiple append statements (probably a qemu or runscript bug)
-	/bin/sh -c "TMPDIR="${TMP_DIR}" ${qemu_bin} ${myconfig} >/dev/null"
+	if ${VM_ENABLE_SDL}; then
+		# for now i assume the default display is :0
+		DISPLAY=:0 XAUTHORITY=/home/${VM_USER}/.Xauthority \
+			/bin/sh -c "TMPDIR="${TMP_DIR}" ${qemu_bin} ${myconfig} >/dev/null"
+	else
+		/bin/sh -c "TMPDIR="${TMP_DIR}" ${qemu_bin} ${myconfig} >/dev/null"
+	fi
 
 	# remove tap devices if the guest system couldn't be started
 	if [ "$?" != "0" ]; then
