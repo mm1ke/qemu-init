@@ -218,17 +218,12 @@ _cfgcheck(){
 			# set default network driver
 			[ -z "${net_drv}" ] && net_drv="rtl8139"
 			# check for mac address
-			if [ -n "${net_mac}" ]; then
-				if ! _scan_running_vm "${net_mac}"; then
-					eerror "MAC-address already used by \"/etc/init.d/kvm.${match_vm##*/}\"!"
-					return 1
-				fi
-			else
+			if [ -z "${net_mac}" ]; then
 				# set random mac address
-				net_mac="`printf 'DE:AD:CA:5E:%02X:%02X\n' \
+				net_mac="`printf 'AA:6E:17:00:%02X:%02X\n' \
 					$(($(dd if=/dev/urandom count=1 2> /dev/null | cksum | cut -d' ' -f1) % 256)) \
 					$(($(dd if=/dev/urandom count=1 2> /dev/null | cksum | cut -d' ' -f1) % 256))`"
-				ewarn " ** RANDOM MAC ADDRESS! Address will be lost on shutdown! **"
+				ewarn " ** MAC: \"${net_mac}\" - Address will be lost on shutdown! **"
 			fi
 
 			case ${net_typ} in
