@@ -23,7 +23,7 @@
 # Discription:
 # start/stop script for qemu guests
 
-extra_commands="tapdel reboot reset memory"
+extra_commands="reboot reset memory"
 
 description="Start Qemu guests"
 description_tapdel="deletes unused tap devices (like from a crashed guest)"
@@ -37,8 +37,9 @@ BRIDGE="/sbin/bridge" 		# sys-apps/iproute2
 IP="/bin/ip"			# sys-apps/iproute2
 NC="/usr/bin/nc"		# net-analyzer/netcat6
 QGA="/usr/bin/qemu-ga-client"	# app-emulation/qemu[pyhton]
+LSOF="/usr/bin/lsof" 		# sys-process/lsof
 
-PID_DIR="/var/run/kvm"
+PID_DIR="/run/kvm"
 TMP_DIR="/var/tmp"
 # max supported vms
 MAX_QTAP=30
@@ -58,21 +59,6 @@ depend(){
 	need net
 }
 
-_scan_running_vm(){
-	local running_vm
-	local running_vm_pid
-
-	for running_vm in ${PID_DIR}/*.pid; do
-	if [ -e "${running_vm}" ]; then
-		running_vm_pid="`cat ${running_vm}`"
-		if (`ps -o "command=" ${running_vm_pid} | egrep "$1" >/dev/null 2>&1`); then
-			match_vm=`echo ${running_vm%.pid}`
-			return 1
-		fi
-	fi
-	done
-}
-
 _stop_tap_device(){
 	local stop_id=${1}
 
@@ -81,13 +67,13 @@ _stop_tap_device(){
 	eend $? "Failed to bring qtap${stop_id} down"
 	${IP} link set qtap${stop_id} nomaster
 	eend $? "Failed to unlink the bridge interface to qtap${stop_id}"
-	sleep 2
 	${IP} tuntap del qtap${stop_id} mode tap
 }
 
+# check if qemu guest agent where enabled for vm
 _check_qga(){
 	if $(${AVAILABLE_QGA}); then
-		if [ -e ${PID_DIR}/${VM_NAME}-qga.sock ]; then
+		if [ -e ${PID_DIR}/${SVCNAME}-qga.sock ]; then
 			return 0
 		else
 			ewarn " WARNING: guest agent not active for ${VM_NAME}"
@@ -120,9 +106,11 @@ _cfgcheck(){
 
 	if [ -n "${VM_USER}" ]; then
 		if ! [ `egrep -i "^${VM_USER}" /etc/passwd` ]; then
-			eerror "User \"${VM_USER}\" not found in /etc/passwd. ${default_msg}"
-			return 1
+			ewarn " ** User \"${VM_USER}\" not found. User set to nobody"
+			VM_USER="nobody"
 		fi
+	else
+		VM_USER="nobody"
 	fi
 
 	if [ -n "${VM_KERNEL}" ] && [ -n "${VM_INITRD}" ]; then
@@ -133,7 +121,7 @@ _cfgcheck(){
 	fi
 
 	# guest wont start with "host" cpu if kvm is disabled
-	[ "$VM_CPU" = "host" ] && VM_ENABLE_KVM="true"
+	[ "${VM_CPU}" = "host" ] && VM_ENABLE_KVM="true"
 
 	# arch spezific configuration
 	case ${VM_ARCH} in
@@ -170,9 +158,7 @@ _cfgcheck(){
 				return 1
 			fi
 			# default security model none
-			if [ -z ${share_secm} ]; then
-				share_secm="none"
-			fi
+			share_secm=${share_secm:-none}
 			VM_9P="${VM_9P} ${share_name};${share_path};${share_secm}"
 		done
 	fi
@@ -190,14 +176,14 @@ _cfgcheck(){
 				return 1
 			fi
 			# check if image is already running
-			if ! _scan_running_vm "${hd_path}"; then
+			if $(${LSOF} -c qemu | grep ${hd_path} >/dev/null); then
 				eerror "This vm-image is already started by \"/etc/init.d/kvm.${match_vm##*/}\"!"
 				return 1
 			fi
 			# set default settings for hd if nothing is set
-			[ -z "${hd_cache}" ] && hd_cache="none"
-			[ -z "${hd_if}" ] && hd_if="ide"
-			[ -z "${hd_aio}" ] && hd_aio="threads"
+			hd_cache=${hd_cache:-writethrough}
+			hd_if=${hd_if:-ide}
+			hd_aio=${hd_aio:-threads}
 			# set image format to raw if lvm partition is used
 			[ -b "${hd_path}" ] && hd_path="${hd_path},format=raw"
 
@@ -216,7 +202,7 @@ _cfgcheck(){
 			local net_drv="$(echo ${single_net}|cut -d';' -f3)"
 
 			# set default network driver
-			[ -z "${net_drv}" ] && net_drv="rtl8139"
+			net_drv=${net_drv:-rtl8139}
 			# check for mac address
 			if [ -z "${net_mac}" ]; then
 				# set random mac address
@@ -291,8 +277,7 @@ _cfgcheck(){
 		else
 			VM_REMOTE_ACCESS_LISTEN_IP=${remote_ip}
 		fi
-		# i don't use _scan_running_vm here because other programms could use those ports too...
-		# have to check with netstat if a port is free
+		# check with netstat if a port is used
 		if [ -z "${remote_port}" ]; then
 			local port_nr=0
 			while $(netstat -nat | egrep "${VM_REMOTE_ACCESS_LISTEN_IP}:580${port_nr}[^0-9]" >/dev/null); do
@@ -320,16 +305,15 @@ _myconfig(){
 
 	# basic config
 	myconfig="-name ${VM_NAME} \
-		-monitor unix:${PID_DIR}/${VM_NAME}.sock,server,nowait \
+		-monitor unix:${PID_DIR}/${SVCNAME}.sock,server,nowait \
 		-balloon virtio \
-		-pidfile ${PID_DIR}/${VM_NAME}.pid"
+		-pidfile ${PID_DIR}/${SVCNAME}.pid \
+		-runas ${VM_USER} \
+		-m ${VM_MEMORY:-512} \
+		-smp ${VM_SMP:-1} \
+		-machine ${VM_MACHINE:-pc} \
+		-k ${VM_LC:-de}"
 
-	# if nothing is set, qemu defaults to 128mb memory and smp=1
-	[ -z "${VM_USER}" ] || myconfig="${myconfig} -runas ${VM_USER}"
-	[ -z "${VM_MEMORY}" ] || myconfig="${myconfig} -m ${VM_MEMORY}"
-	[ -z "${VM_SMP}" ] || myconfig="${myconfig} -smp ${VM_SMP}"
-	[ -z "${VM_MACHINE}" ] || myconfig="${myconfig} -machine ${VM_MACHINE}"
-	[ -z "${VM_LC}" ] || myconfig="${myconfig} -k ${VM_LC}"
 	[ -z "${VM_CPU}" ] || myconfig="${myconfig} -cpu ${VM_CPU}"
 
 	if [ -n "${VM_KERNEL}" ]; then
@@ -349,7 +333,7 @@ _myconfig(){
 		-device virtserialport,chardev=vdagent,name=com.redhat.spice.0"
 	# qemu guest agent (qga)
 	(${VM_ENABLE_QGA}) && myconfig="${myconfig} -device virtio-serial \
-		-chardev socket,path=${PID_DIR}/${VM_NAME}-qga.sock,server,nowait,id=${VM_NAME}-qga \
+		-chardev socket,path=${PID_DIR}/${SVCNAME}-qga.sock,server,nowait,id=${VM_NAME}-qga \
 		-device virtserialport,chardev=${VM_NAME}-qga,name=org.qemu.guest_agent.0"
 
 	# remote access settings
@@ -444,36 +428,21 @@ _myconfig(){
 	fi
 }
 
-tapdel(){
-	local active_qtap
-	# BRDEV must be set in kvm.$vmname
-	if [ -z "${BRDEV}" ]; then
-		ewarn "No BRDEV is set in ${CONF_PATH}"
-	else
-		for active_qtap in `${BRIDGE} link|egrep -o qtap.`; do
-			if _scan_running_vm "ifname=${active_qtap}"; then
-				local stop_id="$(echo ${active_qtap} | tail -c 2)"
-				_stop_tap_device ${stop_id}
-			fi
-		done
-	fi
-}
-
 reboot(){
 	ebegin "Rebooting ${VM_NAME}"
-	_check_qga && ${QGA} --address=${PID_DIR}/${VM_NAME}-qga.sock reboot
+	_check_qga && ${QGA} --address=${PID_DIR}/${SVCNAME}-qga.sock reboot
 	eend $?
 }
 
 reset(){
 	ebegin "Reseting ${VM_NAME}"
-	echo "system_reset" | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
+	echo "system_reset" | ${NC} --unix -q1 ${PID_DIR}/${SVCNAME}.sock > /dev/null 2>&1
 	eend $?
 }
 
 memory(){
 	ebegin "Changing Memory to ${VM_MEMORY}MB"
-	echo "balloon ${VM_MEMORY}" | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
+	echo "balloon ${VM_MEMORY}" | ${NC} --unix -q1 ${PID_DIR}/${SVCNAME}.sock > /dev/null 2>&1
 	eend $?
 }
 
@@ -498,6 +467,7 @@ start(){
 
 	_cfgcheck || return 1
 	_myconfig || return 1
+
 	if [ -n "${VM_NET}" ]; then
 		for single_net in ${VM_NET}; do
 			local net_typ="$(echo ${single_net}|cut -d';' -f1)"
@@ -509,17 +479,20 @@ start(){
 				${IP} tuntap add dev qtap${net_id} mode tap user ${VM_USER} || return 1
 				${IP} link set qtap${net_id} master ${BRDEV}
 				${IP} link set dev qtap${net_id} up promisc on || return 1
+				echo "${net_id}" > ${PID_DIR}/${SVCNAME}.qtap${net_id}
 			fi
 		done
 	fi
 
 	# print some important information
 	ebegin "Starting ${VM_NAME}..."
+	# print remote access settings
 	if [ -n "${VM_REMOTE_ACCESS}" ]; then
 		[ "$(echo ${VM_REMOTE_ACCESS}|cut -d';' -f1)" = vnc ] && \
 			VM_REMOTE_ACCESS_PORT=$(expr ${VM_REMOTE_ACCESS_PORT} + 5900)
 		ebegin " remote access via $(echo ${VM_REMOTE_ACCESS} | cut -d';' -f1) on ${VM_REMOTE_ACCESS_LISTEN_IP}:${VM_REMOTE_ACCESS_PORT}"
 	fi
+	# print 9p shared directories
 	if [ -n "${VM_9P}" ]; then
 		ebegin " Enabled shared folders:"
 		for single_9p in ${VM_9P}; do
@@ -557,7 +530,7 @@ start(){
 			for single_net in ${VM_NET}; do
 				local net_typ="$(echo ${single_net}|cut -d';' -f1)"
 				local net_id="$(echo ${single_net}|cut -d';' -f4)"
-				[ ${net_typ} = "tap" ] && _stop_tap_device ${net_id}
+				[ ${net_typ} = "tap" ] && _stop_tap_device "${net_id}"
 			done
 		fi
 		return 1
@@ -570,17 +543,13 @@ stop(){
 	# set default kill wait to 80 seconds
 	[ -z "${VM_KILL_WAIT}" ] && VM_KILL_WAIT=80
 
-	local KVM_PID="`cat ${PID_DIR}/${VM_NAME}.pid`"
+	local KVM_PID="`cat ${PID_DIR}/${SVCNAME}.pid`"
 
 	if (ps -p ${KVM_PID} --no-heading >/dev/null 2>&1); then
-		# find all linked qtap devices
-		for id in $(ps -o "command=" ${KVM_PID} | grep -o qtap.); do
-			local stop_id="${stop_id} $(echo ${id}|tail -c 2)"
-		done
 
 		ebegin "Stopping ${VM_NAME}"
 		# sending via nc (netcat) the shutdown command
-		echo "system_powerdown" | ${NC} --unix -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
+		echo "system_powerdown" | ${NC} --unix -q1 ${PID_DIR}/${SVCNAME}.sock > /dev/null 2>&1
 		# waiting for system to shutdown
 		einfon "Waiting ${VM_KILL_WAIT} seconds for ${VM_NAME} to shutdown."
 		local cnt=0
@@ -599,23 +568,27 @@ stop(){
 			printf "."
 		done
 		echo
-		# remove tap interfaces
-		for tap_id in ${stop_id}; do
-			if ! $(${BRIDGE} link|grep -o qtap${tap_id} >/dev/null); then
-				ewarn "Couldn't find a qtap device. Please run \"/etc/init.d/kvm.init tapdel\""
-				continue
-			fi
-			_stop_tap_device ${tap_id}
-		done
-
-		# remove remaining files
-		rm -rf ${PID_DIR}/${VM_NAME}.pid
-		rm -rf ${PID_DIR}/${VM_NAME}.sock
-		rm -rf ${PID_DIR}/${VM_NAME}-qga.sock
 	else
 		ewarn "Couldn't find the process for ${VM_NAME}, guest might already down."
 		eend 0
 	fi
+
+	# remove remaining files
+	rm -rf ${PID_DIR}/${SVCNAME}.pid
+	rm -rf ${PID_DIR}/${SVCNAME}.sock
+	rm -rf ${PID_DIR}/${SVCNAME}-qga.sock
+
+	# find all linked qtap devices
+	for id in ${PID_DIR}/${SVCNAME}.qtap*; do
+		# warn if qtap device doesn't exist anymore
+		if ! $(${BRIDGE} link|grep -o qtap$(cat ${id}) >/dev/null); then
+			ewarn "Couldn't find qtap$(cat ${id}) device."
+			continue
+		fi
+		# remove tap interfaces
+		_stop_tap_device $(cat ${id})
+		rm -rf ${PID_DIR}/${SVCNAME}.qtap$(cat ${id})
+	done
 
 	eend 0
 }
