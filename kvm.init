@@ -151,8 +151,8 @@ _cfgcheck(){
 	if [ -n "${_vm_9pshare}" ]; then
 		for single_9p in ${_vm_9pshare}; do
 			local share_name="$(echo ${single_9p}|cut -d';' -f1)"
-			local share_path="$(echo ${single_9p}|cut -d';' -f2)"
-			local share_secm="$(echo ${single_9p}|cut -d';' -f3)"
+			local share_path="$(echo ${single_9p}|cut -sd';' -f2)"
+			local share_secm="$(echo ${single_9p}|cut -sd';' -f3)"
 
 			if [ -z ${share_name} ] || ! [ -e ${share_path} ]; then
 				eerror "No name given or Path does not exist. ${default_msg}"
@@ -168,9 +168,9 @@ _cfgcheck(){
 	if [ -n "${_vm_harddisk}" ]; then
 		for single_hd in ${_vm_harddisk}; do
 			local hd_path="$(echo ${single_hd}|cut -d';' -f1)"
-			local hd_if="$(echo ${single_hd}|cut -d';' -f2)"
-			local hd_cache="$(echo ${single_hd}|cut -d';' -f3)"
-			local hd_aio="$(echo ${single_hd}|cut -d';' -f4)"
+			local hd_if="$(echo ${single_hd}|cut -sd';' -f2)"
+			local hd_cache="$(echo ${single_hd}|cut -sd';' -f3)"
+			local hd_aio="$(echo ${single_hd}|cut -sd';' -f4)"
 
 			if [ -z "${hd_path}" ] || ! [ -e "${hd_path}" ]; then
 				eerror "${hd_path} not found. ${default_msg}"
@@ -199,8 +199,8 @@ _cfgcheck(){
 		local id=0
 		for single_net in ${_vm_interfaces}; do
 			local net_typ="$(echo ${single_net}|cut -d';' -f1)"
-			local net_mac="$(echo ${single_net}|cut -d';' -f2)"
-			local net_drv="$(echo ${single_net}|cut -d';' -f3)"
+			local net_mac="$(echo ${single_net}|cut -sd';' -f2)"
+			local net_drv="$(echo ${single_net}|cut -sd';' -f3)"
 
 			# set default network driver
 			net_drv=${net_drv:-rtl8139}
@@ -267,8 +267,8 @@ _cfgcheck(){
 	# remote access checks
 	if [ -n "${VM_REMOTE_ACCESS}" ]; then
 		local remote_typ="$(echo ${VM_REMOTE_ACCESS}|cut -d';' -f1)"
-		local remote_ip="$(echo ${VM_REMOTE_ACCESS}|cut -d';' -f2)"
-		local remote_port="$(echo ${VM_REMOTE_ACCESS}|cut -d';' -f3)"
+		local remote_ip="$(echo ${VM_REMOTE_ACCESS}|cut -sd';' -f2)"
+		local remote_port="$(echo ${VM_REMOTE_ACCESS}|cut -sd';' -f3)"
 
 		# set listening ip
 		if [ -z "${remote_ip}" ]; then
@@ -365,9 +365,9 @@ _myconfig(){
 	if [ -n "${VM_HD}" ]; then
 		for single_hd in ${VM_HD}; do
 			local hd_path="$(echo ${single_hd}|cut -d';' -f1)"
-			local hd_if="$(echo ${single_hd}|cut -d';' -f2)"
-			local hd_cache="$(echo ${single_hd}|cut -d';' -f3)"
-			local hd_aio="$(echo ${single_hd}|cut -d';' -f4)"
+			local hd_if="$(echo ${single_hd}|cut -sd';' -f2)"
+			local hd_cache="$(echo ${single_hd}|cut -sd';' -f3)"
+			local hd_aio="$(echo ${single_hd}|cut -sd';' -f4)"
 
 			myconfig="${myconfig} \
 			-drive file=${hd_path},if=${hd_if},cache=${hd_cache},aio=${hd_aio}"
@@ -378,9 +378,9 @@ _myconfig(){
 	if [ -n "${VM_NET}" ]; then
 		for single_net in ${VM_NET}; do
 			local net_typ="$(echo ${single_net}|cut -d';' -f1)"
-			local net_mac="$(echo ${single_net}|cut -d';' -f2)"
-			local net_drv="$(echo ${single_net}|cut -d';' -f3)"
-			local net_id="$(echo ${single_net}|cut -d';' -f4)"
+			local net_mac="$(echo ${single_net}|cut -sd';' -f2)"
+			local net_drv="$(echo ${single_net}|cut -sd';' -f3)"
+			local net_id="$(echo ${single_net}|cut -sd';' -f4)"
 
 			case ${net_typ} in
 				tap)
@@ -404,8 +404,8 @@ _myconfig(){
 		local id=0
 		for single_9p in ${VM_9P}; do
 			local share_name="$(echo ${single_9p}|cut -d';' -f1)"
-			local share_path="$(echo ${single_9p}|cut -d';' -f2)"
-			local share_secm="$(echo ${single_9p}|cut -d';' -f3)"
+			local share_path="$(echo ${single_9p}|cut -sd';' -f2)"
+			local share_secm="$(echo ${single_9p}|cut -sd';' -f3)"
 			myconfig="${myconfig} \
 				-fsdev local,id="${VM_NAME}_9p_${id}",path="${share_path}",security_model="${share_secm}" \
 				-device virtio-9p-pci,fsdev="${VM_NAME}_9p_${id}",mount_tag="${share_name}""
@@ -473,7 +473,7 @@ start(){
 	if [ -n "${VM_NET}" ]; then
 		for single_net in ${VM_NET}; do
 			local net_typ="$(echo ${single_net}|cut -d';' -f1)"
-			local net_id="$(echo ${single_net}|cut -d';' -f4)"
+			local net_id="$(echo ${single_net}|cut -sd';' -f4)"
 
 			if [ ${net_typ} = "tap" ]; then
 				tap_enabled=true
@@ -499,8 +499,8 @@ start(){
 		ebegin " Enabled shared folders:"
 		for single_9p in ${VM_9P}; do
 			local share_name="$(echo ${single_9p}|cut -d';' -f1)"
-			local share_path="$(echo ${single_9p}|cut -d';' -f2)"
-			local share_secm="$(echo ${single_9p}|cut -d';' -f3)"
+			local share_path="$(echo ${single_9p}|cut -sd';' -f2)"
+			local share_secm="$(echo ${single_9p}|cut -sd';' -f3)"
 			ebegin "  ${share_path} via ${share_name}(${share_secm})"
 		done
 	fi
