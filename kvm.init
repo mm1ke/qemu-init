@@ -297,6 +297,11 @@ _cfgcheck(){
 	if (${VM_ENABLE_SNAPSHOTMODE}); then
 		ewarn " ** SNAPSHOT MODE! Changes in the guest system won't be saved! **"
 	fi
+	
+	# set usb redir devices to zero if nothing is set
+	if [ -z "${VM_USB_REDIR}" ]; then
+		VM_USB_REDIR=0
+	fi
 }
 
 _myconfig(){
@@ -333,7 +338,14 @@ _myconfig(){
 	(${VM_ENABLE_QGA}) && myconfig="${myconfig} -device virtio-serial \
 		-chardev socket,path=${PID_DIR}/${SVCNAME}-qga.sock,server,nowait,id=${VM_NAME}-qga \
 		-device virtserialport,chardev=${VM_NAME}-qga,name=org.qemu.guest_agent.0"
+	# sdl output
 	(${VM_ENABLE_SDL}) && myconfig="${myconfig} -display sdl"
+	# enable (multiple) usb redir devices
+	while [ ${VM_USB_REDIR} -gt 0 ]; do
+		myconfig="${myconfig} -chardev spicevmc,name=usbredir,id=usbredirchardev${VM_USB_REDIR} \
+			-device usb-redir,chardev=usbredirchardev${VM_USB_REDIR},id=usbredirdev${VM_USB_REDIR},debug=3"
+		VM_USB_REDIR=$[${VM_USB_REDIR} - 1]
+	done
 
 	# remote access settings
 	if [ -n "${VM_REMOTE_ACCESS}" ]; then
