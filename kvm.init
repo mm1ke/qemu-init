@@ -73,7 +73,7 @@ _stop_tap_device(){
 # check if qemu guest agent where enabled for vm
 _check_qga(){
 	if $(${AVAILABLE_QGA}); then
-		if [ -e ${PID_DIR}/${SVCNAME}-qga.sock ]; then
+		if [ -e ${PID_DIR}/${SVCNAME}.qga.sock ]; then
 			return 0
 		else
 			ewarn " WARNING: guest agent not active for ${VM_NAME}"
@@ -337,7 +337,7 @@ _myconfig(){
 		-device virtserialport,chardev=vdagent,name=com.redhat.spice.0"
 	# qemu guest agent (qga)
 	(${VM_ENABLE_QGA}) && myconfig="${myconfig} -device virtio-serial \
-		-chardev socket,path=${PID_DIR}/${SVCNAME}-qga.sock,server,nowait,id=${VM_NAME}-qga \
+		-chardev socket,path=${PID_DIR}/${SVCNAME}.qga.sock,server,nowait,id=${VM_NAME}-qga \
 		-device virtserialport,chardev=${VM_NAME}-qga,name=org.qemu.guest_agent.0"
 	# sdl output
 	(${VM_ENABLE_SDL}) && myconfig="${myconfig} -display sdl"
@@ -445,7 +445,7 @@ _myconfig(){
 
 reboot(){
 	ebegin "Rebooting ${VM_NAME}"
-	_check_qga && ${QGA} --address=${PID_DIR}/${SVCNAME}-qga.sock reboot
+	_check_qga && ${QGA} --address=${PID_DIR}/${SVCNAME}.qga.sock reboot
 	eend $?
 }
 
@@ -599,9 +599,7 @@ stop(){
 	fi
 
 	# remove remaining files
-	rm -rf ${PID_DIR}/${SVCNAME}.pid
-	rm -rf ${PID_DIR}/${SVCNAME}.sock
-	rm -rf ${PID_DIR}/${SVCNAME}-qga.sock
+	rm -rf ${PID_DIR}/${SVCNAME}.*
 
 	# find all linked qtap devices
 	for id in {0..100}; do
