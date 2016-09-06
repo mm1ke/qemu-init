@@ -344,7 +344,7 @@ _myconfig(){
 	while [ ${VM_USB_REDIR} -gt 0 ]; do
 		myconfig="${myconfig} -chardev spicevmc,name=usbredir,id=usbredirchardev${VM_USB_REDIR} \
 			-device usb-redir,chardev=usbredirchardev${VM_USB_REDIR},id=usbredirdev${VM_USB_REDIR},debug=3"
-		VM_USB_REDIR=$[${VM_USB_REDIR} - 1]
+		VM_USB_REDIR=$(expr ${VM_USB_REDIR} - 1)
 	done
 
 	# remote access settings
