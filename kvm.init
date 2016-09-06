@@ -600,6 +600,7 @@ stop(){
 	rm -rf ${PID_DIR}/${SVCNAME}-qga.sock
 
 	# find all linked qtap devices
+	shopt -s nullglob
 	for id in ${PID_DIR}/${SVCNAME}.qtap*; do
 		# warn if qtap device doesn't exist anymore
 		if ! $(${BRIDGE} link|grep -o qtap$(cat ${id}) >/dev/null); then
@@ -610,6 +611,7 @@ stop(){
 		_stop_tap_device $(cat ${id})
 		rm -rf ${PID_DIR}/${SVCNAME}.qtap$(cat ${id})
 	done
+	shopt -u nullglob
 
 	eend 0
 }
