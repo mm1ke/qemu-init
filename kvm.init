@@ -185,8 +185,9 @@ _cfgcheck(){
 			hd_cache=${hd_cache:-writethrough}
 			hd_if=${hd_if:-ide}
 			hd_aio=${hd_aio:-threads}
-			# set image format to raw if lvm partition is used
+			# set image format to raw if lvm partition is used or file extensions end with "raw"
 			[ -b "${hd_path}" ] && hd_path="${hd_path},format=raw"
+			[ "${hd_path##*.}" == "raw" ] && hd_path="${hd_path},format=raw"
 
 			VM_HD="${VM_HD} ${hd_path};${hd_if};${hd_cache};${hd_aio}"
 		done
@@ -600,18 +601,18 @@ stop(){
 	rm -rf ${PID_DIR}/${SVCNAME}-qga.sock
 
 	# find all linked qtap devices
-	shopt -s nullglob
-	for id in ${PID_DIR}/${SVCNAME}.qtap*; do
-		# warn if qtap device doesn't exist anymore
-		if ! $(${BRIDGE} link|grep -o qtap$(cat ${id}) >/dev/null); then
-			ewarn "Couldn't find qtap$(cat ${id}) device."
-			continue
+	for id in {0..100}; do
+		if [ -e "${PID_DIR}/${SVCNAME}.qtap${id}" ]; then
+			# warn if qtap device doesn't exist anymore
+			if ! $(${BRIDGE} link|grep -o qtap$(cat ${id}) >/dev/null); then
+				ewarn "Couldn't find qtap$(cat ${id}) device."
+				continue
+			fi
+			# remove tap interfaces
+			_stop_tap_device $(cat ${id})
+			rm -rf ${PID_DIR}/${SVCNAME}.qtap$(cat ${id})
 		fi
-		# remove tap interfaces
-		_stop_tap_device $(cat ${id})
-		rm -rf ${PID_DIR}/${SVCNAME}.qtap$(cat ${id})
 	done
-	shopt -u nullglob
 
 	eend 0
 }
