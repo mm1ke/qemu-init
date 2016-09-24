@@ -265,6 +265,67 @@ _cfgcheck(){
 		fi
 	fi
 
+#	# remote access checks spice
+#	if [ -n "${VM_REMOTE_ACCESS_SPICE}" ]; then
+#		local spice_remote_typ="$(echo ${VM_REMOTE_ACCESS_SPICE}|cut -d';' -f1)"
+#		local spice_remote_ip="$(echo ${VM_REMOTE_ACCESS_SPICE}|cut -sd';' -f2)"
+#		local spice_remote_port="$(echo ${VM_REMOTE_ACCESS_SPICE}|cut -sd';' -f3)"
+#
+#		# set listening ip
+#		if [ -z "${spice_remote_ip}" ]; then
+#			VM_REMOTE_ACCESS_LISTEN_IP_SPICE="`${IP} address show ${BRDEV} \
+#				| egrep -o '[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}' \
+#				| head -n1`"
+#		else
+#			VM_REMOTE_ACCESS_LISTEN_IP_SPICE=${remote_ip}
+#		fi
+#		# check with netstat if a port is used
+#		if [ -z "${spice_remote_port}" ]; then
+#			local spice_port_nr=0
+#			while $(netstat -nat | egrep "${VM_REMOTE_ACCESS_LISTEN_IP_SPICE}:580${spice_port_nr}[^0-9]" >/dev/null); do
+#				pspice_ort_nr=$(expr ${spice_port_nr} + 1)
+#			done
+#			VM_REMOTE_ACCESS_PORT_SPICE="580${spice_port_nr}"
+#		# check port if it was manuel set
+#		elif $(netstat -nat | egrep "${VM_REMOTE_ACCESS_LISTEN_IP_SPICE}:${spice_remote_port}[^0-9]" >/dev/null); then
+#			eerror "Port is already in use. ${default_msg}"
+#			return 1
+#		else
+#			VM_REMOTE_ACCESS_PORT_SPICE=${spice_remote_port}
+#		fi
+#	fi
+#
+#	# remote access checks vnc
+#	if [ -n "${VM_REMOTE_ACCESS}" ]; then
+#		local remote_typ="$(echo ${VM_REMOTE_ACCESS}|cut -d';' -f1)"
+#		local remote_ip="$(echo ${VM_REMOTE_ACCESS}|cut -sd';' -f2)"
+#		local remote_port="$(echo ${VM_REMOTE_ACCESS}|cut -sd';' -f3)"
+#
+#		# set listening ip
+#		if [ -z "${remote_ip}" ]; then
+#			VM_REMOTE_ACCESS_LISTEN_IP="`${IP} address show ${BRDEV} \
+#				| egrep -o '[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}' \
+#				| head -n1`"
+#		else
+#			VM_REMOTE_ACCESS_LISTEN_IP=${remote_ip}
+#		fi
+#		# check with netstat if a port is used
+#		if [ -z "${remote_port}" ]; then
+#			local port_nr=0
+#			while $(netstat -nat | egrep "${VM_REMOTE_ACCESS_LISTEN_IP}:580${port_nr}[^0-9]" >/dev/null); do
+#				port_nr=$(expr ${port_nr} + 1)
+#			done
+#			VM_REMOTE_ACCESS_PORT="580${port_nr}"
+#		# check port if it was manuel set
+#		elif $(netstat -nat | egrep "${VM_REMOTE_ACCESS_LISTEN_IP}:${remote_port}[^0-9]" >/dev/null); then
+#			eerror "Port is already in use. ${default_msg}"
+#			return 1
+#		else
+#			VM_REMOTE_ACCESS_PORT=${remote_port}
+#		fi
+#	fi
+
+
 	# remote access checks
 	if [ -n "${VM_REMOTE_ACCESS}" ]; then
 		local remote_typ="$(echo ${VM_REMOTE_ACCESS}|cut -d';' -f1)"
@@ -347,6 +408,19 @@ _myconfig(){
 			-device usb-redir,chardev=usbredirchardev${VM_USB_REDIR},id=usbredirdev${VM_USB_REDIR},debug=3"
 		VM_USB_REDIR=$(expr ${VM_USB_REDIR} - 1)
 	done
+
+	if [ -n "${VM_REMOTE_ACCESS_SPICE}" ]; then
+		[ -n "${spice_pw}" ] || spice_pw="\"\",disable-ticketing"
+		myconfig="${myconfig} -spice port=${spice_port},addr=${spice_ip},password=${spice_pw}"
+	fi
+	if [ -n "${VM_REMOTE_ACCESS_VNC}" ]; then
+		vnc_port=$(expr ${vnc_port} - 5800) # check
+		myconfig="${myconfig} -vnc ${vnc_ip}:${vnc_port}"
+	fi
+
+	if [ -n "${VM_REMOTE_ACCESS_SPICE}" ] || [ -n "${VM_REMOTE_ACCESS_VNC}" ]; then
+		(${VM_ENABLE_SDL}) || myconfig="${myconfig} -nographic"
+	fi
 
 	# remote access settings
 	if [ -n "${VM_REMOTE_ACCESS}" ]; then
@@ -546,7 +620,9 @@ start(){
 	fi
 	
 	#password set spice/vnc
-	#echo "set_password vnc blub" | nc --unix -q1 /var/run/kvm/kvm.windows7.sock
+	if ! [ "$(echo ${VM_REMOTE_ACCESS_SPICE}|cut -d';' -f1)" = "" ]; then
+		echo "set_password spice $(echo ${VM_REMOTE_ACCESS_SPICE}|cut -d';' -f1)" | ${NC} --unix -q1 ${PID_DIR}/${SVCNAME}.sock > /dev/null 2>&1
+	fi
 
 	# remove tap devices if the guest system couldn't be started
 	if [ "$?" != "0" ]; then
