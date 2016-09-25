@@ -98,7 +98,6 @@ _check_remote_access_port(){
 			port_nr=$(expr ${port_nr} + 1)
 		done
 		local access_port="${range}${port_nr}"
-	# check port if it was manuel set
 	else
 		local access_port="${port}"
 	fi
