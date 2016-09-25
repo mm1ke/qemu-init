@@ -115,14 +115,15 @@ _cfgcheck(){
 	local _vm_interfaces="${VM_NETWORK} ${VM_NETWORK1} ${VM_NETWORK2} ${VM_NETWORK3} ${VM_NETWORK4} \
 		${VM_NETWORK5} ${VM_NETWORK6} ${VM_NETWORK7} ${VM_NETWORK8} ${VM_NETWORK9}"
 
+	# default message
 	local default_msg="Please check your config (${CONF_PATH})"
-
-	local net_user_set=false
-	local net_tap_set=false
-
+	# get interface ip
 	local local_ip="`${IP} address show ${BRDEV} \
 		| egrep -o '[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}' \
 		| head -n1`"
+
+	# default settings
+	VM_ENABLE_SDL=$(echo ${VM_ENABLE_SDL:-false})
 
 	# basic tests/settings
 	[ -d ${PID_DIR} ] || mkdir ${PID_DIR}
@@ -219,76 +220,64 @@ _cfgcheck(){
 	fi
 
 	# network checks/default settings
-	if [ -z "${_vm_interfaces}" ]; then
-		VM_REMOTE_ACCESS_LISTEN_IP="127.0.0.1"
-	else
-		local id=0
-		for single_net in ${_vm_interfaces}; do
-			local net_typ="$(echo ${single_net}|cut -d';' -f1)"
-			local net_mac="$(echo ${single_net}|cut -sd';' -f2)"
-			local net_drv="$(echo ${single_net}|cut -sd';' -f3)"
+	local net_user_set=false
+	local net_tap_set=false
+	local id=0
+	for single_net in ${_vm_interfaces}; do
+		local net_typ="$(echo ${single_net}|cut -d';' -f1)"
+		local net_mac="$(echo ${single_net}|cut -sd';' -f2)"
+		local net_drv="$(echo ${single_net}|cut -sd';' -f3)"
 
-			# set default network driver
-			net_drv=${net_drv:-rtl8139}
-			# check for mac address
-			if [ -z "${net_mac}" ]; then
-				# set random mac address
-				net_mac="`printf 'AA:6E:17:00:%02X:%02X\n' \
-					$(($(dd if=/dev/urandom count=1 2> /dev/null | cksum | cut -d' ' -f1) % 256)) \
-					$(($(dd if=/dev/urandom count=1 2> /dev/null | cksum | cut -d' ' -f1) % 256))`"
-				ewarn " ** MAC: \"${net_mac}\" - Address will be lost on shutdown! **"
-			fi
-
-			case ${net_typ} in
-				tap)
-					net_tap_set=true
-					# check bridge device
-					if [ -n "${BRDEV}" ]; then
-						if ! [ -d /sys/class/net/${BRDEV}/bridge/ ]; then
-							eerror "${BRDEV} is not a bridge device. ${default_msg}"
-							return 1
-						fi
-					else
-						eerror "You need a bridge device! ${default_msg}"
-						return 1
-					fi
-					# get the guest_nummber for qtap...
-					while (${BRIDGE} link | egrep -o qtap${id} >/dev/null 2>&1); do
-						id=$(expr ${id} + 1)
-					done
-					# check for max_vms
-					if [ ${id} -ge ${MAX_QTAP} ]; then
-						eerror "Maximum number of network connections reached. Please increase the MAX_QTAP variable."
-						return 1
-					fi
-					VM_NET="${VM_NET} ${net_typ};${net_mac};${net_drv};${id}"
-					;;
-				user)
-					if (${net_user_set}); then
-						eerror "Network typ user can only be used once. ${default_msg}"
-						return 1
-					fi
-					net_user_set=true
-					VM_NET="${VM_NET} ${net_typ};${net_mac};${net_drv};usernet"
-					;;
-				*)
-					ewarn "** Unknow Network Typ. Network will be disabled"
-					continue
-					;;
-			esac
-			id=$(expr ${id} + 1)
-		done
-
-		if (${net_user_set}) && ! (${net_tap_set}); then
-			[ -z "${BRDEV}" ] && VM_REMOTE_ACCESS_LISTEN_IP="127.0.0.1"
-			if [ -n "${BRDEV}" ]; then
-				if ! (${IP} link show ${BRDEV} > /dev/null 2>&1); then
-					ewarn " ** ${BRDEV} dosen't exist. Remote Access set to 127.0.0.1"
-					VM_REMOTE_ACCESS_LISTEN_IP="127.0.0.1"
-				fi
-			fi
+		# set default network driver
+		net_drv=${net_drv:-rtl8139}
+		# check for mac address
+		if [ -z "${net_mac}" ]; then
+			# set random mac address
+			net_mac="`printf 'AA:6E:17:00:%02X:%02X\n' \
+				$(($(dd if=/dev/urandom count=1 2> /dev/null | cksum | cut -d' ' -f1) % 256)) \
+				$(($(dd if=/dev/urandom count=1 2> /dev/null | cksum | cut -d' ' -f1) % 256))`"
+			ewarn " ** MAC: \"${net_mac}\" - Address will be lost on shutdown! **"
 		fi
-	fi
+
+		case ${net_typ} in
+			tap)
+				net_tap_set=true
+				# check bridge device
+				if [ -n "${BRDEV}" ]; then
+					if ! [ -d /sys/class/net/${BRDEV}/bridge/ ]; then
+						eerror "${BRDEV} is not a bridge device. ${default_msg}"
+						return 1
+					fi
+				else
+					eerror "You need a bridge device! ${default_msg}"
+					return 1
+				fi
+				# get the guest_nummber for qtap...
+				while (${BRIDGE} link | egrep -o qtap${id} >/dev/null 2>&1); do
+					id=$(expr ${id} + 1)
+				done
+				# check for max_vms
+				if [ ${id} -ge ${MAX_QTAP} ]; then
+					eerror "Maximum number of network connections reached. Please increase the MAX_QTAP variable."
+					return 1
+				fi
+				VM_NET="${VM_NET} ${net_typ};${net_mac};${net_drv};${id}"
+				;;
+			user)
+				if (${net_user_set}); then
+					eerror "Network typ user can only be used once. ${default_msg}"
+					return 1
+				fi
+				net_user_set=true
+				VM_NET="${VM_NET} ${net_typ};${net_mac};${net_drv};usernet"
+				;;
+			*)
+				ewarn " ** Unknow Network Typ. Network will be disabled"
+				continue
+				;;
+		esac
+		id=$(expr ${id} + 1)
+	done
 
 	# remote access spice
 	VM_ENABLE_SPICE="$(echo ${VM_REMOTE_ACCESS_SPICE:-false}|cut -d';' -f1)"
@@ -309,7 +298,7 @@ _cfgcheck(){
 		vnc_port="$(expr $(_check_remote_access_port 590 "${vnc_ip}" "${vnc_port}") - 5900)"
 	fi
 
-	if (${VM_ENABLE_SNAPSHOTMODE}); then
+	if (${VM_ENABLE_SNAPSHOTMODE:-false}); then
 		ewarn " ** SNAPSHOT MODE! Changes in the guest system won't be saved! **"
 	fi
 
@@ -340,17 +329,17 @@ _myconfig(){
 	fi
 
 	# enable/disable kvm
-	(${VM_ENABLE_KVM}) && myconfig="${myconfig} -enable-kvm"
+	(${VM_ENABLE_KVM:-true}) && myconfig="${myconfig} -enable-kvm"
 	# daemonize true/false
-	(${VM_ENABLE_DAEMONIZE}) && myconfig="${myconfig} -daemonize"
+	(${VM_ENABLE_DAEMONIZE:-true}) && myconfig="${myconfig} -daemonize"
 	# snapshotmode on/off
-	(${VM_ENABLE_SNAPSHOTMODE}) && myconfig="${myconfig} -snapshot"
+	(${VM_ENABLE_SNAPSHOTMODE:-false}) && myconfig="${myconfig} -snapshot"
 	# spice virtual serial port (copy/paste)
-	(${VM_ENABLE_VIRTSERIAL}) && myconfig="${myconfig} -device virtio-serial \
+	(${VM_ENABLE_VIRTSERIAL:-true}) && myconfig="${myconfig} -device virtio-serial \
 		-chardev spicevmc,id=vdagent,name=vdagent \
 		-device virtserialport,chardev=vdagent,name=com.redhat.spice.0"
 	# qemu guest agent (qga)
-	(${VM_ENABLE_QGA}) && myconfig="${myconfig} -device virtio-serial \
+	(${VM_ENABLE_QGA:-false}) && myconfig="${myconfig} -device virtio-serial \
 		-chardev socket,path=${PID_DIR}/${SVCNAME}.qga.sock,server,nowait,id=${VM_NAME}-qga \
 		-device virtserialport,chardev=${VM_NAME}-qga,name=org.qemu.guest_agent.0"
 	# sdl output
@@ -519,7 +508,6 @@ start(){
 			ebegin "  ${share_path} via ${share_name}(${share_secm})"
 		done
 	fi
-#	(${VM_ENABLE_SDL}) && export DISPLAY=:0 XAUTHORITY=/home/${VM_USER}/.Xauthority
 
 	(${DEBUG}) && printf "* Qemu settings:\n\t \
 		qemu-bin: ${qemu_bin}\n\t \
@@ -530,8 +518,6 @@ start(){
 		kernel cmd: ${VM_APPEND}\n\t \
 		initrd: ${VM_INITRD}\n\t \
 		bridge device: ${BRDEV}\n\t \
-		remote-access-port: ${VM_REMOTE_ACCESS_PORT}\n\t \
-		remote-access-typ: ${VM_REMOTE_ACCESS}\n\t \
 		boot from: ${VM_BOOT_DEV}\n\t \
 		boot media: ${VM_CDROM}\n\t \
 		full config: ${myconfig}\n"
