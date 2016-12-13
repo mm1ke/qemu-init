@@ -123,6 +123,14 @@ _cfgcheck(){
 
 	# default settings
 	VM_ENABLE_SDL=$(echo ${VM_ENABLE_SDL:-false})
+	VM_ENABLE_GL=$(echo ${VM_ENABLE_GL:-false})
+
+	if ${VM_ENABLE_GL}; then
+		if ! [ "${VM_DISPLAY}" = "virtio" ] && ! ${VM_ENABLE_SDL}; then
+			ewarn " ** virtio GPU-Driver and SDL must be enabled for OpenGL"
+			VM_ENABLE_GL=false
+		fi
+	fi
 
 	# basic tests/settings
 	[ -d ${PID_DIR} ] || mkdir ${PID_DIR}
@@ -226,9 +234,12 @@ _cfgcheck(){
 		local net_typ="$(echo ${single_net}|cut -d';' -f1)"
 		local net_mac="$(echo ${single_net}|cut -sd';' -f2)"
 		local net_drv="$(echo ${single_net}|cut -sd';' -f3)"
+		local net_brd="$(echo ${single_net}|cut -sd';' -f4)"
 
 		# set default network driver
 		net_drv=${net_drv:-rtl8139}
+		# set default bridge
+		net_brd=${net_brd:-${BRDEV}}
 		# check for mac address
 		if [ -z "${net_mac}" ]; then
 			# set random mac address
@@ -242,9 +253,9 @@ _cfgcheck(){
 			tap)
 				net_tap_set=true
 				# check bridge device
-				if [ -n "${BRDEV}" ]; then
-					if ! [ -d /sys/class/net/${BRDEV}/bridge/ ]; then
-						eerror "${BRDEV} is not a bridge device. ${default_msg}"
+				if [ -n "${net_brd}" ]; then
+					if ! [ -d /sys/class/net/${net_brd}/bridge/ ]; then
+						eerror "${net_brd} is not a bridge device. ${default_msg}"
 						return 1
 					fi
 				else
@@ -260,7 +271,7 @@ _cfgcheck(){
 					eerror "Maximum number of network connections reached. Please increase the MAX_QTAP variable."
 					return 1
 				fi
-				VM_NET="${VM_NET} ${net_typ};${net_mac};${net_drv};${id}"
+				VM_NET="${VM_NET} ${net_typ};${net_mac};${net_drv};${id};${net_brd}"
 				;;
 			user)
 				if (${net_user_set}); then
@@ -343,6 +354,9 @@ _myconfig(){
 		-device virtserialport,chardev=${VM_NAME}-qga,name=org.qemu.guest_agent.0"
 	# sdl output
 	(${VM_ENABLE_SDL}) && myconfig="${myconfig} -display sdl"
+	# enable opengl
+	(${VM_ENABLE_GL}) && myconfig="${myconfig},gl=on"
+
 	# enable (multiple) usb redir devices
 	while [ ${VM_USB_REDIR} -gt 0 ]; do
 		myconfig="${myconfig} -chardev spicevmc,name=usbredir,id=usbredirchardev${VM_USB_REDIR} \
@@ -477,12 +491,13 @@ start(){
 		for single_net in ${VM_NET}; do
 			local net_typ="$(echo ${single_net}|cut -d';' -f1)"
 			local net_id="$(echo ${single_net}|cut -sd';' -f4)"
+			local net_brd="$(echo ${single_net}|cut -sd';' -f5)"
 
 			if [ ${net_typ} = "tap" ]; then
 				tap_enabled=true
 				einfo "Setting up the tap interface: qtap${net_id}"
 				${IP} tuntap add dev qtap${net_id} mode tap user ${VM_USER} || return 1
-				${IP} link set qtap${net_id} master ${BRDEV}
+				${IP} link set qtap${net_id} master ${net_brd}
 				${IP} link set dev qtap${net_id} up promisc on || return 1
 				echo "${net_id}" > ${PID_DIR}/${SVCNAME}.qtap${net_id}
 			fi
