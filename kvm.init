@@ -23,12 +23,13 @@
 # Discription:
 # start/stop script for qemu guests
 
-extra_commands="reboot reset memory"
+extra_commands="reboot reset memory restartdelay"
 
 description="Start Qemu guests"
 description_reboot="reboots the virtual machine via the qemu guest agent"
 description_reset="resets the virtual maschine"
 description_memory="Update memory according to config (via ballooing)"
+#description_restartdelay="Restart VM, but wait for the Remote Desktop Port to be available"
 #description_freeze="freezes/unfreezes the virtual machine"
 
 # programs / dependencies
@@ -463,6 +464,43 @@ memory(){
 	echo "balloon ${VM_MEMORY}" | ${NC} --unix -q1 ${PID_DIR}/${SVCNAME}.sock > /dev/null 2>&1
 	eend $?
 }
+
+#restartdelay(){
+#	# stop VM
+#	local spice_access="$(echo "info spice" | ${NC} --unix -q1 ${PID_DIR}/${SVCNAME}.sock 2> /dev/null 2>&1 | grep address | cut -d':' -f2-3)"
+#	local vnc_access="$(echo "info vnc" | ${NC} --unix -q1 ${PID_DIR}/${SVCNAME}.sock 2> /dev/null 2>&1 | grep address | cut -d':' -f2-3)"
+#	stop
+#	# check with netstat if a port is used
+#	local timeout=60
+#	local cnt=0
+#	# get spice/vnc ports
+#	einfo "Waiting for ports"
+#	if [ -n "${spice_access}" ]; then
+#		while $(netstat -nat | egrep "${spice_access}[^0-9]" >/dev/null); do
+#			cnt=$(expr ${cnt} + 1)
+#			if [ ${cnt} -gt ${timeout} ]; then
+#				echo
+#				eerror " Waited to long for port to become available"
+#				break
+#			fi
+#			sleep 1
+#		done
+#	fi
+#	if [ -n "${vnc_access}" ]; then
+#		while $(netstat -nat | egrep "${vnc_access}[^0-9]" >/dev/null); do
+#			cnt=$(expr ${cnt} + 1)
+#			if [ ${cnt} -gt ${timeout} ]; then
+#				echo
+#				eerror " Waited to long for port to become available"
+#				break
+#			fi
+#			sleep 1
+#		done
+#	fi
+#
+#	# start VM
+#	start
+#}
 
 #freeze(){
 #	# add right command for freeze
