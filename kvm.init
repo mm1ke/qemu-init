@@ -26,7 +26,6 @@
 extra_commands="reboot reset memory"
 
 description="Start Qemu guests"
-description_tapdel="deletes unused tap devices (like from a crashed guest)"
 description_reboot="reboots the virtual machine via the qemu guest agent"
 description_reset="resets the virtual maschine"
 description_memory="Update memory according to config (via ballooing)"
