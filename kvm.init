@@ -503,6 +503,18 @@ start(){
 		done
 	fi
 
+	# start delay
+	if [ -n "${VM_START_WAIT}" ]; then
+		einfon "Waiting ${VM_START_WAIT} seconds before starting ${VM_NAME}."
+		local cnt=0
+		while [ ${cnt} -lt ${VM_START_WAIT} ]; do
+			cnt=$(expr ${cnt} + 2)
+			sleep 2
+			printf "."
+		done
+		echo
+	fi
+
 	# print some important information
 	ebegin "Starting ${VM_NAME}..."
 	# print remote access settings
