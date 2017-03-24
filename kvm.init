@@ -23,10 +23,9 @@
 # Discription:
 # start/stop script for qemu guests
 
-extra_commands="reboot reset memory"
+extra_commands="reboot reset memory restartdelay"
 
 description="Start Qemu guests"
-description_tapdel="deletes unused tap devices (like from a crashed guest)"
 description_reboot="reboots the virtual machine via the qemu guest agent"
 description_reset="resets the virtual maschine"
 description_memory="Update memory according to config (via ballooing)"
@@ -85,6 +84,25 @@ _check_qga(){
 	fi
 }
 
+_check_remote_access_port(){
+	# remote access checks
+	local range=${1}
+	local ip=${2}
+	local port=${3}
+
+	# check with netstat if a port is used
+	if [ -z "${port}" ]; then
+		local port_nr=0
+		while $(netstat -nat | egrep "${ip}:${range}${port_nr}[^0-9]" >/dev/null); do
+			port_nr=$(expr ${port_nr} + 1)
+		done
+		local access_port="${range}${port_nr}"
+	else
+		local access_port="${port}"
+	fi
+
+	echo ${access_port}
+}
 
 _cfgcheck(){
 	#create hw lists
@@ -95,10 +113,23 @@ _cfgcheck(){
 	local _vm_interfaces="${VM_NETWORK} ${VM_NETWORK1} ${VM_NETWORK2} ${VM_NETWORK3} ${VM_NETWORK4} \
 		${VM_NETWORK5} ${VM_NETWORK6} ${VM_NETWORK7} ${VM_NETWORK8} ${VM_NETWORK9}"
 
+	# default message
 	local default_msg="Please check your config (${CONF_PATH})"
+	# get interface ip
+	local local_ip="`${IP} address show ${BRDEV} \
+		| egrep -o '[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}' \
+		| head -n1`"
 
-	local net_user_set=false
-	local net_tap_set=false
+	# default settings
+	VM_ENABLE_SDL=$(echo ${VM_ENABLE_SDL:-false})
+	VM_ENABLE_GL=$(echo ${VM_ENABLE_GL:-false})
+
+	if ${VM_ENABLE_GL}; then
+		if ! [ "${VM_DISPLAY}" = "virtio" ] && ! ${VM_ENABLE_SDL}; then
+			ewarn " ** virtio GPU-Driver and SDL must be enabled for OpenGL"
+			VM_ENABLE_GL=false
+		fi
+	fi
 
 	# basic tests/settings
 	[ -d ${PID_DIR} ] || mkdir ${PID_DIR}
@@ -108,6 +139,7 @@ _cfgcheck(){
 		if ! [ `egrep -i "^${VM_USER}" /etc/passwd` ]; then
 			ewarn " ** User \"${VM_USER}\" not found. User set to nobody"
 			VM_USER="nobody"
+			VM_ENABLE_SDL=false
 		fi
 	else
 		VM_USER="nobody"
@@ -194,172 +226,91 @@ _cfgcheck(){
 	fi
 
 	# network checks/default settings
-	if [ -z "${_vm_interfaces}" ]; then
-		VM_REMOTE_ACCESS_LISTEN_IP="127.0.0.1"
-	else
-		local id=0
-		for single_net in ${_vm_interfaces}; do
-			local net_typ="$(echo ${single_net}|cut -d';' -f1)"
-			local net_mac="$(echo ${single_net}|cut -sd';' -f2)"
-			local net_drv="$(echo ${single_net}|cut -sd';' -f3)"
+	local net_user_set=false
+	local net_tap_set=false
+	local id=0
+	for single_net in ${_vm_interfaces}; do
+		local net_typ="$(echo ${single_net}|cut -d';' -f1)"
+		local net_mac="$(echo ${single_net}|cut -sd';' -f2)"
+		local net_drv="$(echo ${single_net}|cut -sd';' -f3)"
+		local net_brd="$(echo ${single_net}|cut -sd';' -f4)"
 
-			# set default network driver
-			net_drv=${net_drv:-rtl8139}
-			# check for mac address
-			if [ -z "${net_mac}" ]; then
-				# set random mac address
-				net_mac="`printf 'AA:6E:17:00:%02X:%02X\n' \
-					$(($(dd if=/dev/urandom count=1 2> /dev/null | cksum | cut -d' ' -f1) % 256)) \
-					$(($(dd if=/dev/urandom count=1 2> /dev/null | cksum | cut -d' ' -f1) % 256))`"
-				ewarn " ** MAC: \"${net_mac}\" - Address will be lost on shutdown! **"
-			fi
+		# set default network driver
+		net_drv=${net_drv:-rtl8139}
+		# set default bridge
+		net_brd=${net_brd:-${BRDEV}}
+		# check for mac address
+		if [ -z "${net_mac}" ]; then
+			# set random mac address
+			net_mac="`printf 'AA:6E:17:00:%02X:%02X\n' \
+				$(($(dd if=/dev/urandom count=1 2> /dev/null | cksum | cut -d' ' -f1) % 256)) \
+				$(($(dd if=/dev/urandom count=1 2> /dev/null | cksum | cut -d' ' -f1) % 256))`"
+			ewarn " ** MAC: \"${net_mac}\" - Address will be lost on shutdown! **"
+		fi
 
-			case ${net_typ} in
-				tap)
-					net_tap_set=true
-					# check bridge device
-					if [ -n "${BRDEV}" ]; then
-						if ! [ -d /sys/class/net/${BRDEV}/bridge/ ]; then
-							eerror "${BRDEV} is not a bridge device. ${default_msg}"
-							return 1
-						fi
-					else
-						eerror "You need a bridge device! ${default_msg}"
+		case ${net_typ} in
+			tap)
+				net_tap_set=true
+				# check bridge device
+				if [ -n "${net_brd}" ]; then
+					if ! [ -d /sys/class/net/${net_brd}/bridge/ ]; then
+						eerror "${net_brd} is not a bridge device. ${default_msg}"
 						return 1
 					fi
-					# get the guest_nummber for qtap...
-					while (${BRIDGE} link | egrep -o qtap${id} >/dev/null 2>&1); do
-						id=$(expr ${id} + 1)
-					done
-					# check for max_vms
-					if [ ${id} -ge ${MAX_QTAP} ]; then
-						eerror "Maximum number of network connections reached. Please increase the MAX_QTAP variable."
-						return 1
-					fi
-					VM_NET="${VM_NET} ${net_typ};${net_mac};${net_drv};${id}"
-					;;
-				user)
-					if (${net_user_set}); then
-						eerror "Network typ user can only be used once. ${default_msg}"
-						return 1
-					fi
-					net_user_set=true
-					VM_NET="${VM_NET} ${net_typ};${net_mac};${net_drv};usernet"
-					;;
-				*)
-					ewarn "** Unknow Network Typ. Network will be disabled"
-					continue
-					;;
-			esac
-			id=$(expr ${id} + 1)
-		done
-
-		if (${net_user_set}) && ! (${net_tap_set}); then
-			[ -z "${BRDEV}" ] && VM_REMOTE_ACCESS_LISTEN_IP="127.0.0.1"
-			if [ -n "${BRDEV}" ]; then
-				if ! (${IP} link show ${BRDEV} > /dev/null 2>&1); then
-					ewarn " ** ${BRDEV} dosen't exist. Remote Access set to 127.0.0.1"
-					VM_REMOTE_ACCESS_LISTEN_IP="127.0.0.1"
+				else
+					eerror "You need a bridge device! ${default_msg}"
+					return 1
 				fi
-			fi
-		fi
+				# get the guest_nummber for qtap...
+				while (${BRIDGE} link | egrep -o qtap${id} >/dev/null 2>&1); do
+					id=$(expr ${id} + 1)
+				done
+				# check for max_vms
+				if [ ${id} -ge ${MAX_QTAP} ]; then
+					eerror "Maximum number of network connections reached. Please increase the MAX_QTAP variable."
+					return 1
+				fi
+				VM_NET="${VM_NET} ${net_typ};${net_mac};${net_drv};${id};${net_brd}"
+				;;
+			user)
+				if (${net_user_set}); then
+					eerror "Network typ user can only be used once. ${default_msg}"
+					return 1
+				fi
+				net_user_set=true
+				VM_NET="${VM_NET} ${net_typ};${net_mac};${net_drv};usernet"
+				;;
+			*)
+				ewarn " ** Unknow Network Typ. Network will be disabled"
+				continue
+				;;
+		esac
+		id=$(expr ${id} + 1)
+	done
+
+	# remote access spice
+	VM_ENABLE_SPICE="$(echo ${VM_REMOTE_ACCESS_SPICE:-false}|cut -d';' -f1)"
+	VM_ENABLE_VNC="$(echo ${VM_REMOTE_ACCESS_VNC:-false}|cut -d';' -f1)"
+
+	if ${VM_ENABLE_SPICE}; then
+		spice_password="$(echo ${VM_REMOTE_ACCESS_SPICE}|cut -sd';' -f2)"
+		spice_ip="$(echo ${VM_REMOTE_ACCESS_SPICE}|cut -sd';' -f3)"
+		spice_port="$(echo ${VM_REMOTE_ACCESS_SPICE}|cut -sd';' -f4)"
+		[ -z "${spice_ip}" ] && spice_ip="${local_ip}"
+		spice_port="$(_check_remote_access_port 580 "${spice_ip}" "${spice_port}")"
+	fi
+	if ${VM_ENABLE_VNC}; then
+		vnc_password="$(echo ${VM_REMOTE_ACCESS_VNC}|cut -sd';' -f2)"
+		vnc_ip="$(echo ${VM_REMOTE_ACCESS_VNC}|cut -sd';' -f3)"
+		vnc_port="$(echo ${VM_REMOTE_ACCESS_VNC}|cut -sd';' -f4)"
+		[ -z "${vnc_ip}" ] && vnc_ip="${local_ip}"
+		vnc_port="$(expr $(_check_remote_access_port 590 "${vnc_ip}" "${vnc_port}") - 5900)"
 	fi
 
-#	# remote access checks spice
-#	if [ -n "${VM_REMOTE_ACCESS_SPICE}" ]; then
-#		local spice_remote_typ="$(echo ${VM_REMOTE_ACCESS_SPICE}|cut -d';' -f1)"
-#		local spice_remote_ip="$(echo ${VM_REMOTE_ACCESS_SPICE}|cut -sd';' -f2)"
-#		local spice_remote_port="$(echo ${VM_REMOTE_ACCESS_SPICE}|cut -sd';' -f3)"
-#
-#		# set listening ip
-#		if [ -z "${spice_remote_ip}" ]; then
-#			VM_REMOTE_ACCESS_LISTEN_IP_SPICE="`${IP} address show ${BRDEV} \
-#				| egrep -o '[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}' \
-#				| head -n1`"
-#		else
-#			VM_REMOTE_ACCESS_LISTEN_IP_SPICE=${remote_ip}
-#		fi
-#		# check with netstat if a port is used
-#		if [ -z "${spice_remote_port}" ]; then
-#			local spice_port_nr=0
-#			while $(netstat -nat | egrep "${VM_REMOTE_ACCESS_LISTEN_IP_SPICE}:580${spice_port_nr}[^0-9]" >/dev/null); do
-#				pspice_ort_nr=$(expr ${spice_port_nr} + 1)
-#			done
-#			VM_REMOTE_ACCESS_PORT_SPICE="580${spice_port_nr}"
-#		# check port if it was manuel set
-#		elif $(netstat -nat | egrep "${VM_REMOTE_ACCESS_LISTEN_IP_SPICE}:${spice_remote_port}[^0-9]" >/dev/null); then
-#			eerror "Port is already in use. ${default_msg}"
-#			return 1
-#		else
-#			VM_REMOTE_ACCESS_PORT_SPICE=${spice_remote_port}
-#		fi
-#	fi
-#
-#	# remote access checks vnc
-#	if [ -n "${VM_REMOTE_ACCESS}" ]; then
-#		local remote_typ="$(echo ${VM_REMOTE_ACCESS}|cut -d';' -f1)"
-#		local remote_ip="$(echo ${VM_REMOTE_ACCESS}|cut -sd';' -f2)"
-#		local remote_port="$(echo ${VM_REMOTE_ACCESS}|cut -sd';' -f3)"
-#
-#		# set listening ip
-#		if [ -z "${remote_ip}" ]; then
-#			VM_REMOTE_ACCESS_LISTEN_IP="`${IP} address show ${BRDEV} \
-#				| egrep -o '[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}' \
-#				| head -n1`"
-#		else
-#			VM_REMOTE_ACCESS_LISTEN_IP=${remote_ip}
-#		fi
-#		# check with netstat if a port is used
-#		if [ -z "${remote_port}" ]; then
-#			local port_nr=0
-#			while $(netstat -nat | egrep "${VM_REMOTE_ACCESS_LISTEN_IP}:580${port_nr}[^0-9]" >/dev/null); do
-#				port_nr=$(expr ${port_nr} + 1)
-#			done
-#			VM_REMOTE_ACCESS_PORT="580${port_nr}"
-#		# check port if it was manuel set
-#		elif $(netstat -nat | egrep "${VM_REMOTE_ACCESS_LISTEN_IP}:${remote_port}[^0-9]" >/dev/null); then
-#			eerror "Port is already in use. ${default_msg}"
-#			return 1
-#		else
-#			VM_REMOTE_ACCESS_PORT=${remote_port}
-#		fi
-#	fi
-
-
-	# remote access checks
-	if [ -n "${VM_REMOTE_ACCESS}" ]; then
-		local remote_typ="$(echo ${VM_REMOTE_ACCESS}|cut -d';' -f1)"
-		local remote_ip="$(echo ${VM_REMOTE_ACCESS}|cut -sd';' -f2)"
-		local remote_port="$(echo ${VM_REMOTE_ACCESS}|cut -sd';' -f3)"
-
-		# set listening ip
-		if [ -z "${remote_ip}" ]; then
-			VM_REMOTE_ACCESS_LISTEN_IP="`${IP} address show ${BRDEV} \
-				| egrep -o '[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}' \
-				| head -n1`"
-		else
-			VM_REMOTE_ACCESS_LISTEN_IP=${remote_ip}
-		fi
-		# check with netstat if a port is used
-		if [ -z "${remote_port}" ]; then
-			local port_nr=0
-			while $(netstat -nat | egrep "${VM_REMOTE_ACCESS_LISTEN_IP}:580${port_nr}[^0-9]" >/dev/null); do
-				port_nr=$(expr ${port_nr} + 1)
-			done
-			VM_REMOTE_ACCESS_PORT="580${port_nr}"
-		# check port if it was manuel set
-		elif $(netstat -nat | egrep "${VM_REMOTE_ACCESS_LISTEN_IP}:${remote_port}[^0-9]" >/dev/null); then
-			eerror "Port is already in use. ${default_msg}"
-			return 1
-		else
-			VM_REMOTE_ACCESS_PORT=${remote_port}
-		fi
-	fi
-
-	if (${VM_ENABLE_SNAPSHOTMODE}); then
+	if (${VM_ENABLE_SNAPSHOTMODE:-false}); then
 		ewarn " ** SNAPSHOT MODE! Changes in the guest system won't be saved! **"
 	fi
-	
+
 	# set usb redir devices to zero if nothing is set
 	if [ -z "${VM_USB_REDIR}" ]; then
 		VM_USB_REDIR=0
@@ -387,21 +338,24 @@ _myconfig(){
 	fi
 
 	# enable/disable kvm
-	(${VM_ENABLE_KVM}) && myconfig="${myconfig} -enable-kvm"
+	(${VM_ENABLE_KVM:-true}) && myconfig="${myconfig} -enable-kvm"
 	# daemonize true/false
-	(${VM_ENABLE_DAEMONIZE}) && myconfig="${myconfig} -daemonize"
+	(${VM_ENABLE_DAEMONIZE:-true}) && myconfig="${myconfig} -daemonize"
 	# snapshotmode on/off
-	(${VM_ENABLE_SNAPSHOTMODE}) && myconfig="${myconfig} -snapshot"
+	(${VM_ENABLE_SNAPSHOTMODE:-false}) && myconfig="${myconfig} -snapshot"
 	# spice virtual serial port (copy/paste)
-	(${VM_ENABLE_VIRTSERIAL}) && myconfig="${myconfig} -device virtio-serial \
+	(${VM_ENABLE_VIRTSERIAL:-true}) && myconfig="${myconfig} -device virtio-serial \
 		-chardev spicevmc,id=vdagent,name=vdagent \
 		-device virtserialport,chardev=vdagent,name=com.redhat.spice.0"
 	# qemu guest agent (qga)
-	(${VM_ENABLE_QGA}) && myconfig="${myconfig} -device virtio-serial \
+	(${VM_ENABLE_QGA:-false}) && myconfig="${myconfig} -device virtio-serial \
 		-chardev socket,path=${PID_DIR}/${SVCNAME}.qga.sock,server,nowait,id=${VM_NAME}-qga \
 		-device virtserialport,chardev=${VM_NAME}-qga,name=org.qemu.guest_agent.0"
 	# sdl output
 	(${VM_ENABLE_SDL}) && myconfig="${myconfig} -display sdl"
+	# enable opengl
+	(${VM_ENABLE_GL}) && myconfig="${myconfig},gl=on"
+
 	# enable (multiple) usb redir devices
 	while [ ${VM_USB_REDIR} -gt 0 ]; do
 		myconfig="${myconfig} -chardev spicevmc,name=usbredir,id=usbredirchardev${VM_USB_REDIR} \
@@ -423,28 +377,16 @@ _myconfig(){
 	fi
 
 	# remote access settings
-	if [ -n "${VM_REMOTE_ACCESS}" ]; then
-		case "$(echo ${VM_REMOTE_ACCESS}|cut -d';' -f1)" in
-			spice|SPICE)
-				[ -n "${VM_REMOTE_ACCESS_PW}" ] || VM_REMOTE_ACCESS_PW="\"\",disable-ticketing"
-				myconfig="${myconfig} -spice \
-					port=${VM_REMOTE_ACCESS_PORT},addr=${VM_REMOTE_ACCESS_LISTEN_IP},password=${VM_REMOTE_ACCESS_PW}"
-				;;
-			vnc|VNC)
-				VM_REMOTE_ACCESS_PORT=$(expr ${VM_REMOTE_ACCESS_PORT} - 5800)
-				myconfig="${myconfig} \
-					-vnc ${VM_REMOTE_ACCESS_LISTEN_IP}:${VM_REMOTE_ACCESS_PORT}"
-				;;
-			none|NONE)
-				ewarn " ** Remote access disabled"
-				(${VM_ENABLE_SDL}) || VM_DISPLAY=""
-				;;
-			*)
-				ewarn " Unknow option. Remote access will be disabled"
-				(${VM_ENABLE_SDL}) || myconfig="${myconfig} -nographic"
-				;;
-		esac
-	else
+	if ${VM_ENABLE_SPICE}; then
+		myconfig="${myconfig} -spice port=${spice_port},addr=${spice_ip}"
+		[ -z "${spice_password}" ] && myconfig="${myconfig},disable-ticketing"
+	fi
+	if ${VM_ENABLE_VNC}; then
+		myconfig="${myconfig} -vnc ${vnc_ip}:${vnc_port}"
+		[ -n "${vnc_password}" ] && myconfig="${myconfig},password"
+	fi
+
+	if ! ${VM_ENABLE_SPICE} && ! ${VM_ENABLE_VNC}; then
 		(${VM_ENABLE_SDL}) || myconfig="${myconfig} -nographic"
 	fi
 
@@ -561,26 +503,39 @@ start(){
 		for single_net in ${VM_NET}; do
 			local net_typ="$(echo ${single_net}|cut -d';' -f1)"
 			local net_id="$(echo ${single_net}|cut -sd';' -f4)"
+			local net_brd="$(echo ${single_net}|cut -sd';' -f5)"
 
 			if [ ${net_typ} = "tap" ]; then
 				tap_enabled=true
 				einfo "Setting up the tap interface: qtap${net_id}"
 				${IP} tuntap add dev qtap${net_id} mode tap user ${VM_USER} || return 1
-				${IP} link set qtap${net_id} master ${BRDEV}
+				${IP} link set qtap${net_id} master ${net_brd}
 				${IP} link set dev qtap${net_id} up promisc on || return 1
 				echo "${net_id}" > ${PID_DIR}/${SVCNAME}.qtap${net_id}
 			fi
 		done
 	fi
 
+	# start delay
+	if [ -n "${VM_START_WAIT}" ]; then
+		einfon "Waiting ${VM_START_WAIT} seconds before starting ${VM_NAME}."
+		local cnt=0
+		while [ ${cnt} -lt ${VM_START_WAIT} ]; do
+			cnt=$(expr ${cnt} + 2)
+			sleep 2
+			printf "."
+		done
+		echo
+	fi
+
 	# print some important information
 	ebegin "Starting ${VM_NAME}..."
 	# print remote access settings
-	if [ -n "${VM_REMOTE_ACCESS}" ]; then
-		[ "$(echo ${VM_REMOTE_ACCESS}|cut -d';' -f1)" = vnc ] && \
-			VM_REMOTE_ACCESS_PORT=$(expr ${VM_REMOTE_ACCESS_PORT} + 5900)
-		ebegin " remote access via $(echo ${VM_REMOTE_ACCESS} | cut -d';' -f1) on ${VM_REMOTE_ACCESS_LISTEN_IP}:${VM_REMOTE_ACCESS_PORT}"
-	fi
+	(${VM_ENABLE_SPICE}) && \
+		ebegin " remote acces via spice on ${spice_ip}:${spice_port}"
+	(${VM_ENABLE_VNC}) && \
+		ebegin " remote acces via vnc on ${vnc_ip}:$(expr ${vnc_port} + 5900)"
+
 	# print 9p shared directories
 	if [ -n "${VM_9P}" ]; then
 		ebegin " Enabled shared folders:"
@@ -591,7 +546,6 @@ start(){
 			ebegin "  ${share_path} via ${share_name}(${share_secm})"
 		done
 	fi
-#	(${VM_ENABLE_SDL}) && export DISPLAY=:0 XAUTHORITY=/home/${VM_USER}/.Xauthority
 
 	(${DEBUG}) && printf "* Qemu settings:\n\t \
 		qemu-bin: ${qemu_bin}\n\t \
@@ -602,8 +556,6 @@ start(){
 		kernel cmd: ${VM_APPEND}\n\t \
 		initrd: ${VM_INITRD}\n\t \
 		bridge device: ${BRDEV}\n\t \
-		remote-access-port: ${VM_REMOTE_ACCESS_PORT}\n\t \
-		remote-access-typ: ${VM_REMOTE_ACCESS}\n\t \
 		boot from: ${VM_BOOT_DEV}\n\t \
 		boot media: ${VM_CDROM}\n\t \
 		full config: ${myconfig}\n"
@@ -618,11 +570,14 @@ start(){
 	else
 		/bin/sh -c "TMPDIR="${TMP_DIR}" ${qemu_bin} ${myconfig} >/dev/null"
 	fi
+<<<<<<< HEAD
 	
 	#password set spice/vnc
 	if ! [ "$(echo ${VM_REMOTE_ACCESS_SPICE}|cut -d';' -f1)" = "" ]; then
 		echo "set_password spice $(echo ${VM_REMOTE_ACCESS_SPICE}|cut -d';' -f1)" | ${NC} --unix -q1 ${PID_DIR}/${SVCNAME}.sock > /dev/null 2>&1
 	fi
+=======
+>>>>>>> 65dfb06e2c245d426794095f7862250360a2cf76
 
 	# remove tap devices if the guest system couldn't be started
 	if [ "$?" != "0" ]; then
@@ -635,6 +590,20 @@ start(){
 			done
 		fi
 		return 1
+	fi
+
+	# set passwords for spice/vnc
+	if ${VM_ENABLE_SPICE}; then
+		if ! [ "${spice_password}" = "" ]; then
+			echo "set_password spice ${spice_password}" \
+			| ${NC} --unix -q1 ${PID_DIR}/${SVCNAME}.sock > /dev/null 2>&1
+		fi
+	fi
+	if ${VM_ENABLE_VNC}; then
+		if ! [ "${vnc_password}" = "" ]; then
+			echo "set_password vnc ${vnc_password}" \
+			| ${NC} --unix -q1 ${PID_DIR}/${SVCNAME}.sock > /dev/null 2>&1
+		fi
 	fi
 
 	eend $?
@@ -674,22 +643,22 @@ stop(){
 		eend 0
 	fi
 
-	# remove remaining files
-	rm -rf ${PID_DIR}/${SVCNAME}.*
-
 	# find all linked qtap devices
 	for id in {0..100}; do
 		if [ -e "${PID_DIR}/${SVCNAME}.qtap${id}" ]; then
 			# warn if qtap device doesn't exist anymore
-			if ! $(${BRIDGE} link|grep -o qtap$(cat ${id}) >/dev/null); then
-				ewarn "Couldn't find qtap$(cat ${id}) device."
+			if ! $(${BRIDGE} link|grep -o qtap${id} >/dev/null); then
+				ewarn "Couldn't find qtap${id} device."
 				continue
 			fi
 			# remove tap interfaces
-			_stop_tap_device $(cat ${id})
-			rm -rf ${PID_DIR}/${SVCNAME}.qtap$(cat ${id})
+			_stop_tap_device ${id}
+			rm -rf ${PID_DIR}/${SVCNAME}.qtap${id}
 		fi
 	done
+
+	# remove remaining files
+	rm -rf ${PID_DIR}/${SVCNAME}.*
 
 	eend 0
 }
