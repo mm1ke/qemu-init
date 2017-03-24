@@ -219,7 +219,7 @@ _cfgcheck(){
 			hd_aio=${hd_aio:-threads}
 			# set image format to raw if lvm partition is used or file extensions end with "raw"
 			[ -b "${hd_path}" ] && hd_path="${hd_path},format=raw"
-			[ "${hd_path##*.}" == "raw" ] && hd_path="${hd_path},format=raw"
+			[ "${hd_path##*.}" = "raw" ] && hd_path="${hd_path},format=raw"
 
 			VM_HD="${VM_HD} ${hd_path};${hd_if};${hd_cache};${hd_aio}"
 		done
@@ -571,7 +571,7 @@ start(){
 		/bin/sh -c "TMPDIR="${TMP_DIR}" ${qemu_bin} ${myconfig} >/dev/null"
 	fi
 
-	#password set spice/vnc
+#password set spice/vnc
 	if ! [ "$(echo ${VM_REMOTE_ACCESS_SPICE}|cut -d';' -f1)" = "" ]; then
 		echo "set_password spice $(echo ${VM_REMOTE_ACCESS_SPICE}|cut -d';' -f1)" | ${NC} --unix -q1 ${PID_DIR}/${SVCNAME}.sock > /dev/null 2>&1
 	fi
@@ -641,7 +641,7 @@ stop(){
 	fi
 
 	# find all linked qtap devices
-	for id in {0..100}; do
+	for id in $(seq 1 100); do
 		if [ -e "${PID_DIR}/${SVCNAME}.qtap${id}" ]; then
 			# warn if qtap device doesn't exist anymore
 			if ! $(${BRIDGE} link|grep -o qtap${id} >/dev/null); then
