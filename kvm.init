@@ -621,6 +621,10 @@ stop(){
 				ewarn " Killed ${VM_NAME}"
 				break
 			fi
+			# send system_powerdown every 20 seconds
+			if [ $(( ${cnt} % 20)) = 0 ]; then
+				echo "system_powerdown" | ${NC} --unix -q1 ${PID_DIR}/${SVCNAME}.sock > /dev/null 2>&1
+			fi
 			sleep 2
 			printf "."
 		done
