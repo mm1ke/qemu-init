@@ -136,7 +136,7 @@ _cfgcheck(){
 	[ -d ${TMP_DIR} ] || TMP_DIR="/var/tmp"
 
 	if [ -n "${VM_USER}" ]; then
-		if ! [ `egrep -i "^${VM_USER}" /etc/passwd` ]; then
+		if ! $(getent passwd ${VM_USER} >/dev/null 2>&1); then
 			ewarn " ** User \"${VM_USER}\" not found. User set to nobody"
 			VM_USER="nobody"
 			VM_ENABLE_SDL=false
