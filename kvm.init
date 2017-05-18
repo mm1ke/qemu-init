@@ -371,19 +371,6 @@ _myconfig(){
 		VM_USB_REDIR=$(expr ${VM_USB_REDIR} - 1)
 	done
 
-	if [ -n "${VM_REMOTE_ACCESS_SPICE}" ]; then
-		[ -n "${spice_pw}" ] || spice_pw="\"\",disable-ticketing"
-		myconfig="${myconfig} -spice port=${spice_port},addr=${spice_ip},password=${spice_pw}"
-	fi
-	if [ -n "${VM_REMOTE_ACCESS_VNC}" ]; then
-		vnc_port=$(expr ${vnc_port} - 5800) # check
-		myconfig="${myconfig} -vnc ${vnc_ip}:${vnc_port}"
-	fi
-
-	if [ -n "${VM_REMOTE_ACCESS_SPICE}" ] || [ -n "${VM_REMOTE_ACCESS_VNC}" ]; then
-		(${VM_ENABLE_SDL}) || myconfig="${myconfig} -nographic"
-	fi
-
 	# remote access settings
 	if ${VM_ENABLE_SPICE}; then
 		myconfig="${myconfig} -spice port=${spice_port},addr=${spice_ip}"
