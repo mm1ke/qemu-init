@@ -635,7 +635,7 @@ stop(){
 	fi
 
 	# find all linked qtap devices
-	for id in $(seq 1 100); do
+	for id in $(seq 0 100); do
 		if [ -e "${PID_DIR}/${SVCNAME}.qtap${id}" ]; then
 			# warn if qtap device doesn't exist anymore
 			if ! $(${BRIDGE} link|grep -o qtap${id} >/dev/null); then
