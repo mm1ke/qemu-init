@@ -330,7 +330,7 @@ _myconfig(){
 	# basic config
 	myconfig="-name ${VM_NAME} \
 		-monitor unix:${PID_DIR}/${SVCNAME}.sock,server,nowait \
-		-balloon virtio \
+		-device virtio-balloon \
 		-pidfile ${PID_DIR}/${SVCNAME}.pid \
 		-runas ${VM_USER} \
 		-m ${VM_MEMORY:-512} \
