@@ -462,13 +462,13 @@ reboot(){
 
 reset(){
 	ebegin "Reseting ${VM_NAME}"
-	echo "system_reset" | ${NC} --unix -q1 ${PID_DIR}/${SVCNAME}.sock > /dev/null 2>&1
+	echo "system_reset" | ${NC} -U -q1 ${PID_DIR}/${SVCNAME}.sock > /dev/null 2>&1
 	eend $?
 }
 
 memory(){
 	ebegin "Changing Memory to ${VM_MEMORY}MB"
-	echo "balloon ${VM_MEMORY}" | ${NC} --unix -q1 ${PID_DIR}/${SVCNAME}.sock > /dev/null 2>&1
+	echo "balloon ${VM_MEMORY}" | ${NC} -U -q1 ${PID_DIR}/${SVCNAME}.sock > /dev/null 2>&1
 	eend $?
 }
 
@@ -583,13 +583,13 @@ start(){
 	if ${VM_ENABLE_SPICE}; then
 		if ! [ "${spice_password}" = "" ]; then
 			echo "set_password spice ${spice_password}" \
-			| ${NC} --unix -q1 ${PID_DIR}/${SVCNAME}.sock > /dev/null 2>&1
+			| ${NC} -U -q1 ${PID_DIR}/${SVCNAME}.sock > /dev/null 2>&1
 		fi
 	fi
 	if ${VM_ENABLE_VNC}; then
 		if ! [ "${vnc_password}" = "" ]; then
 			echo "set_password vnc ${vnc_password}" \
-			| ${NC} --unix -q1 ${PID_DIR}/${SVCNAME}.sock > /dev/null 2>&1
+			| ${NC} -U -q1 ${PID_DIR}/${SVCNAME}.sock > /dev/null 2>&1
 		fi
 	fi
 
@@ -606,7 +606,7 @@ stop(){
 
 		ebegin "Stopping ${VM_NAME}"
 		# sending via nc (netcat) the shutdown command
-		echo "system_powerdown" | ${NC} --unix -q1 ${PID_DIR}/${SVCNAME}.sock > /dev/null 2>&1
+		echo "system_powerdown" | ${NC} -U -q1 ${PID_DIR}/${SVCNAME}.sock > /dev/null 2>&1
 		# waiting for system to shutdown
 		einfon "Waiting ${VM_KILL_WAIT} seconds for ${VM_NAME} to shutdown."
 		local cnt=0
@@ -623,7 +623,7 @@ stop(){
 			fi
 			# send system_powerdown every 20 seconds
 			if [ $(( ${cnt} % 20)) = 0 ]; then
-				echo "system_powerdown" | ${NC} --unix -q1 ${PID_DIR}/${SVCNAME}.sock > /dev/null 2>&1
+				echo "system_powerdown" | ${NC} -U -q1 ${PID_DIR}/${SVCNAME}.sock > /dev/null 2>&1
 			fi
 			sleep 2
 			printf "."
