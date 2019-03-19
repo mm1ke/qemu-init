@@ -34,7 +34,7 @@ description_memory="Update memory according to config (via ballooing)"
 # programs / dependencies
 BRIDGE="/sbin/bridge" 		# sys-apps/iproute2
 IP="/bin/ip"			# sys-apps/iproute2
-NC="/usr/bin/nc"		# net-analyzer/netcat6
+NC="/usr/bin/nc"		# net-analyzer/openbsd-netcat
 QGA="/usr/bin/qemu-ga-client"	# app-emulation/qemu[pyhton]
 LSOF="/usr/bin/lsof" 		# sys-process/lsof
 
