@@ -4,7 +4,7 @@
 # Autor: Michael Mair-Keimberger (m DOT mairkeimberger AT gmail DOT com)
 # Date: 13.08.2009
 
-# Copyright (C) 2016  Michael Mair-Keimberger
+# Copyright (C) 2020  Michael Mair-Keimberger
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -32,11 +32,11 @@ description_memory="Update memory according to config (via ballooing)"
 #description_freeze="freezes/unfreezes the virtual machine"
 
 # programs / dependencies
-BRIDGE="/sbin/bridge" 		# sys-apps/iproute2
-IP="/bin/ip"			# sys-apps/iproute2
-NC="/usr/bin/nc"		# net-analyzer/openbsd-netcat
+BRIDGE="/sbin/bridge"					# sys-apps/iproute2
+IP="/bin/ip"									# sys-apps/iproute2
+NC="/usr/bin/nc"							# net-analyzer/openbsd-netcat
 QGA="/usr/bin/qemu-ga-client"	# app-emulation/qemu[pyhton]
-LSOF="/usr/bin/lsof" 		# sys-process/lsof
+LSOF="/usr/bin/lsof"					# sys-process/lsof
 
 PID_DIR="/run/kvm"
 TMP_DIR="/var/tmp"
@@ -347,6 +347,8 @@ _myconfig(){
 
 	# enable/disable kvm
 	(${VM_ENABLE_KVM:-true}) && myconfig="${myconfig} -enable-kvm"
+	# enable/disable usb support
+	(${VM_ENABLE_USB:-true}) && myconfig="${myconfig} -usb"
 	# daemonize true/false
 	(${VM_ENABLE_DAEMONIZE:-true}) && myconfig="${myconfig} -daemonize"
 	# snapshotmode on/off
@@ -437,10 +439,9 @@ _myconfig(){
 		done
 	fi
 
-	[ -z "${VM_USB}" ] || myconfig="${myconfig} -usb ${VM_USB}"
 	[ -z "${VM_DISPLAY}" ] || myconfig="${myconfig} -vga ${VM_DISPLAY}"
 	[ -z "${VM_AUDIO}" ] || myconfig="${myconfig} -soundhw ${VM_AUDIO}"
-	[ -z "${VM_OTHERS}" ] || myconfig="${myconfig} ${VM_OTHERS}"
+	[ -z "${VM_DEVICES}" ] || myconfig="${myconfig} ${VM_DEVICES}"
 	[ -z "${VM_CDROM}" ] || myconfig="${myconfig} -cdrom ${VM_CDROM}"
 
 	if ! [ -z ${VM_BOOT_DEV} ]; then
