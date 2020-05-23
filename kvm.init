@@ -79,7 +79,7 @@ _check_qga(){
 			return 1
 		fi
 	else
-		ewarn " WARNING: qemu guest agent not available."
+		ewarn " WARNING: qemu guest agent not available. Install app-emulation/qemu[python]"
 		return 1
 	fi
 }
