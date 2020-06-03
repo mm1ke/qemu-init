@@ -1,0 +1,299 @@
+#!/bin/bash
+
+# Filename: qvm
+# Autor: Michael Mair-Keimberger (m DOT mairkeimberger AT gmail DOT com)
+# Date: 31.05.2020
+
+# Copyright (C) 2020  Michael Mair-Keimberger
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
+# Discription:
+# user start/stop/modify script for qemu guest
+
+# programs / dependencies
+BRIDGE="/sbin/bridge"					# sys-apps/iproute2
+IP="/bin/ip"									# sys-apps/iproute2
+NC="/usr/bin/nc"							# net-analyzer/openbsd-netcat
+QGA="/usr/bin/qemu-ga-client"	# app-emulation/qemu[pyhton]
+LSOF="/usr/bin/lsof"					# sys-process/lsof
+
+QEMUCC="/home/ai/coding/qemucc"
+
+# TODO better handling of vmname
+vmname="${2##*.}"
+
+# check PID_DIR
+PID_DIR="/run/kvm"
+if [ $(id -u) = 0 ]; then
+	[ -d ${PID_DIR} ] || mkdir ${PID_DIR}
+else
+	PID_DIR="/run/user/$(id -u)"
+fi
+# export PID_DIR, because we need it in qemucc
+export PID_DIR
+
+# check if the qemu guest agent is available
+QGA_AVAILABLE=false
+if $(command -v ${QGA} > /dev/null) ; then
+	QGA_AVAILABLE=true
+fi
+
+# check if TMP_DIR exists
+if [ $(id -u) = 0 ]; then
+	[ -d ${TMP_DIR} ] || TMP_DIR="/tmp"
+else
+	if [ -n "${TMP_DIR}" ]; then
+		[ -w ${TMP_DIR} ] || TMP_DIR="/run/user/$(id -u)"
+	else
+		TMP_DIR="/run/user/$(id -u)"
+	fi
+fi
+
+usage() {
+	echo -e "$0"
+	echo
+	echo -e "start/stop/list vm"
+	echo
+	echo -e "$0 -b|--boot /path/to/config.file\t\tboot vm config file"
+	echo -e "$0 -s|--stop /path/to/config.file|vmname\tstop vmname"
+	echo -e "$0 -r|--reboot /path/to/config.file|vmname\trestart vmname (via qemu guest agent)"
+	echo -e "$0 -x|--reset /path/to/config.file|vmname\treset vmname"
+	echo -e "$0 -f|--freeze /path/to/config.file|vmname\tfreeze/unfreeze guest filesystem (via qemu guest agent)"
+	#TODO
+	# -l list running vm
+	#echo
+	#echo -e "modify vm"
+	#TODO
+	# -u update vm
+	#  -m memory
+	# send command to guest-agent / qemu socket
+	# adding hw on the fly
+	#echo
+	#echo -e "other settings"
+	#TODO
+	# create tap interfaces
+}
+
+# check if qemu guest agent where enabled for vm
+_check_qga(){
+	if $(${QGA_AVAILABLE}); then
+		if [ -e ${PID_DIR}/${vmname}.qga.sock ]; then
+			return 0
+		else
+			echo " WARNING: guest agent not active for ${vmname}"
+			return 1
+		fi
+	else
+		echo " WARNING: qemu guest agent not available. Install app-emulation/qemu[python]"
+		return 1
+	fi
+}
+
+vm_reboot(){
+	echo "Rebooting ${vmname}"
+	_check_qga && ${QGA} --address=${PID_DIR}/${vmname}.qga.sock reboot
+}
+
+vm_reset(){
+	echo "Reseting ${vmname}"
+	echo "system_reset" | ${NC} -U -q1 ${PID_DIR}/${vmname}.sock > /dev/null 2>&1
+}
+
+vm_freeze_thaw(){
+	if _check_qga; then
+		local freeze_status="$(${QGA} --address=${PID_DIR}/${vmname}.qga.sock fsfreeze status)"
+		if [ "${freeze_status}" = "thawed" ]; then
+			echo "Freezing the filesystem"
+			${QGA} --address=${PID_DIR}/${vmname}.qga.sock fsfreeze freeze
+		elif [ "${freeze_status}" = "frozen" ]; then
+			echo "Thawing the filesystem"
+			${QGA} --address=${PID_DIR}/${vmname}.qga.sock fsfreeze thaw
+		else
+			echo "Error thawing/freezeing filesystem"
+		fi
+	fi
+}
+
+memory(){
+	ebegin "Changing Memory to ${VM_MEMORY}MB"
+	echo "balloon ${VM_MEMORY}" | ${NC} -U -q1 ${PID_DIR}/${vmname}.sock > /dev/null 2>&1
+	eend $?
+}
+
+_stop_tap_devices() {
+	# find all linked qtap devices
+	if [ -e "${PID_DIR}/${vmname}.net" ]; then
+		for qtap_id in $(cat ${PID_DIR}/${vmname}.net); do
+			# warn if qtap device doesn't exist anymore
+			if ! $(${BRIDGE} link|grep -o ${qtap_id} >/dev/null); then
+				echo "Couldn't find ${qtap_id} device."
+				continue
+			fi
+			# remove tap interfaces
+			echo "Removing ${qtap_id} interface"
+			${IP} link set dev ${qtap_id} down || \
+				echo "Failed to bring ${qtap_id} down"
+			${IP} link set ${qtap_id} nomaster || \
+				echo "Failed to unlink the bridge interface to ${qtap_id}"
+			${IP} tuntap del ${qtap_id} mode tap || \
+				echo "Failed to delete tap interface ${qtap_id}"
+
+		done
+		# better safe then sorry
+		if [ -e  "${PID_DIR}/${vmname}.net" ]; then
+			rm -rf ${PID_DIR}/${vmname}.net
+		fi
+	fi
+}
+
+vm_start(){
+	myconfig=$(${QEMUCC} --checkandcreate $1)
+	# password are only returned if remote access is enabled
+	vm_spice_pw=$(${QEMUCC} -s $1)
+	vm_vnc_pw=$(${QEMUCC} -v $1)
+
+	# if ${myconfig} is empty something went wrong
+	if [ -z "${myconfig}" ]; then
+		echo "Something went wrong while creating the vm-config. Please check previous message(s)"
+		return 1
+	fi
+
+	if $(echo ${myconfig} | grep -q "display sdl"); then
+		local sdl_user=$(${QEMUCC} -u $1)
+		VM_ENABLE_SDL=true
+	fi
+
+	# print some important information
+	echo "Starting ${vmname}..."
+
+	# Start the Virtual Machine
+	# start guest with /bin/sh, otherwise qemu breaks with
+	# multiple append statements (probably a qemu or runscript bug)
+	if ${VM_ENABLE_SDL}; then
+		# for now i assume the default display is :0
+		DISPLAY=:0 XAUTHORITY=/home/${sdl_user}/.Xauthority \
+			/bin/sh -c "TMPDIR=${TMP_DIR} ${myconfig} >/dev/null"
+	else
+		/bin/sh -c "TMPDIR=${TMP_DIR} ${myconfig} >/dev/null"
+	fi
+
+	# remove tap devices if the guest system couldn't be started
+	if [ "$?" != "0" ]; then
+		# only root can remove tap interfaces
+		if [ $(id -u) = 0 ]; then
+			echo "Failed to start ${vmname}, removing qtap interfaces"
+			_stop_tap_devices
+		fi
+		return 1
+	fi
+
+	# set passwords for spice/vnc
+	if [ -n "${vm_spice_pw}" ]; then
+		echo "set_password spice ${vm_spice_pw}" \
+		| ${NC} -U -q1 ${PID_DIR}/${vmname}.sock > /dev/null 2>&1
+	fi
+	if [ -n "${vm_vnc_pw}" ]; then
+		echo "set_password vnc ${vm_vnc_pw}" \
+		| ${NC} -U -q1 ${PID_DIR}/${vmname}.sock > /dev/null 2>&1
+	fi
+}
+
+vm_stop(){
+	# set default kill wait to 80 seconds
+	[ -z "${VM_KILL_WAIT}" ] && VM_KILL_WAIT=80
+
+	local KVM_PID="$(cat ${PID_DIR}/${vmname}.pid)"
+
+	if (ps -p ${KVM_PID} --no-heading >/dev/null 2>&1); then
+
+		echo "Stopping ${vmname}"
+		# sending via nc (netcat) the shutdown command
+		echo "system_powerdown" | ${NC} -U -q1 ${PID_DIR}/${vmname}.sock > /dev/null 2>&1
+		# waiting for system to shutdown
+		echo -n "Waiting ${VM_KILL_WAIT} seconds for ${vmname} to shutdown."
+		local cnt=0
+		while [ -n "$(ps -p ${KVM_PID} --no-heading)" ]; do
+			cnt=$(expr ${cnt} + 2)
+			if [ ${cnt} -gt ${VM_KILL_WAIT} ]; then
+				echo
+				echo " Failed to shuddown ${vmname}, Guest will be killed."
+				# kill qemu
+				kill -9 ${KVM_PID} > /dev/null 2>&1
+				sleep 1
+				echo " Killed ${vmname}"
+				break
+			fi
+			# send system_powerdown every 20 seconds
+			if [ $(( ${cnt} % 20)) = 0 ]; then
+				echo "system_powerdown" | ${NC} -U -q1 ${PID_DIR}/${vmname}.sock > /dev/null 2>&1
+			fi
+			sleep 2
+			printf "."
+		done
+		echo
+	else
+		echo "Couldn't find the process for ${vmname}, guest might already down."
+	fi
+
+
+	if [ $(id -u) = 0 ]; then
+		_stop_tap_devices
+		# for some reason when running as root qemu doesn't clean up pid/sock files
+		# after we stopped a vm. So lets clean them up manually.
+		for f in qga.sock sock pid; do
+			if [ -e "${PID_DIR}/${vmname}.${f}" ]; then
+				rm ${PID_DIR}/${vmname}.${f}
+			fi
+		done
+	fi
+}
+
+if [ $# -lt 1 ]; then usage; exit; fi
+
+OPTS=$(getopt -o b:s:r:x:f: --long boot:,stop:,reboot:,reset:,freeze: -n 'qvm' -- "$@")
+eval set -- "$OPTS"
+
+while true; do
+	case "$1" in
+		-b|--boot)
+			case "$2" in
+				"") shift 2 ;;
+				*) vm_start "$2" ; shift 2 ;;
+			esac ;;
+		-s|--stop)
+			case "$2" in
+				"") shift 2 ;;
+				*) vm_stop "$2" ; shift 2 ;;
+			esac ;;
+		-r|--reboot)
+			case "$2" in
+				"") shift 2 ;;
+				*) vm_reboot "$2" ; shift 2 ;;
+			esac ;;
+		-x|--reset)
+			case "$2" in
+				"") shift 2 ;;
+				*) vm_reset "$2" ; shift 2 ;;
+			esac ;;
+		-f|--freeze)
+			case "$2" in
+				"") shift 2 ;;
+				*) vm_freeze_thaw "$2" ; shift 2 ;;
+			esac ;;
+		--) shift ; break ;;
+		*) echo "Internal error!"; exit 1 ;;
+	esac
+done
