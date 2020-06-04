@@ -51,7 +51,6 @@ usage() {
 	echo -e "$0" /path/to/config.file
 }
 
-
 _check_remote_access_port(){
 	# remote access checks
 	local range=${1}
@@ -79,6 +78,7 @@ _cfg_network_check(){
 	local _net_user_set=false
 	local _net_tap_set=false # not used
 	local _net_id=0
+	local random_mac=false
 
 	for single_net in ${_vm_interfaces}; do
 		local net_typ="$(echo ${single_net}|cut -d';' -f1)"

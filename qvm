@@ -85,6 +85,7 @@ usage() {
 	#echo -e "other settings"
 	#TODO
 	# create tap interfaces
+	# enter qemu vm console (socket)
 }
 
 # check if qemu guest agent where enabled for vm
