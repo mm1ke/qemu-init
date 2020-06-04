@@ -28,7 +28,6 @@ extra_commands="reboot reset memory restartdelay"
 description="Start Qemu guests"
 description_reboot="reboots the virtual machine via the qemu guest agent"
 description_reset="resets the virtual maschine"
-#description_memory="Update memory according to config (via ballooing)"
 
 # programs / dependencies
 BRIDGE="/sbin/bridge"					# sys-apps/iproute2
@@ -100,7 +99,6 @@ _check_qga(){
 	fi
 }
 
-
 reboot(){
 	ebegin "Rebooting ${VM_NAME}"
 	_check_qga && ${QGA} --address=${PID_DIR}/${VM_NAME}.qga.sock reboot
@@ -112,12 +110,6 @@ reset(){
 	echo "system_reset" | ${NC} -U -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
 	eend $?
 }
-
-#memory(){
-#	ebegin "Changing Memory to ${VM_MEMORY}MB"
-#	echo "balloon ${VM_MEMORY}" | ${NC} -U -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
-#	eend $?
-#}
 
 start(){
 	myconfig=$(${QEMUCC} --checkandcreate ${CONF_PATH})
