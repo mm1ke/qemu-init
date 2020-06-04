@@ -332,13 +332,15 @@ _cfgcheck(){
 				echo "user \"${VM_USER}\" not found. User set to nobody" | (loginfo)
 				VM_USER="nobody"
 				VM_ENABLE_SDL=false
+				VM_ENABLE_GL=false
 			fi
 		else
 			VM_USER="nobody"
 			VM_ENABLE_SDL=false
+			VM_ENABLE_GL=false
 		fi
 	else
-		# if run as non root, unset VM_USER in order to not use -runas
+		# if run as non root, unset VM_USER so that the script avoids using -runas
 		VM_USER=""
 	fi
 
@@ -348,6 +350,7 @@ _cfgcheck(){
 			if ! [ -e /home/${1}/.Xauthority ]; then
 				echo "No Xauthority file for user \"${1}\". Disabling SDL output" | (loginfo)
 				VM_ENABLE_SDL=false
+				VM_ENABLE_GL=false
 			fi
 		fi
 	}
@@ -456,7 +459,7 @@ _myconfig(){
 		[ -n "${vnc_password}" ] && myconfig="${myconfig},password"
 	fi
 
-	if ! ${VM_ENABLE_SPICE} && ! ${VM_ENABLE_VNC}; then
+	if ! ${VM_ENABLE_SPICE} && ! ${VM_ENABLE_VNC} && ! ${VM_ENABLE_DAEMONIZE}; then
 		(${VM_ENABLE_SDL}) || myconfig="${myconfig} -nographic"
 	fi
 

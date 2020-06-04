@@ -172,29 +172,20 @@ vm_start(){
 		return 1
 	fi
 
-	if $(echo ${myconfig} | grep -q "display sdl"); then
-		local sdl_user=$(${QEMUCC} -u $1)
-		VM_ENABLE_SDL=true
-	fi
-
-	# print some important information
+	# Start the Virtual Machine
 	echo "Starting ${vmname}..."
 
-	# Start the Virtual Machine
+	#
 	# start guest with /bin/sh, otherwise qemu breaks with
 	# multiple append statements (probably a qemu or runscript bug)
-	if ${VM_ENABLE_SDL}; then
-		# for now i assume the default display is :0
-		DISPLAY=:0 XAUTHORITY=/home/${sdl_user}/.Xauthority \
-			/bin/sh -c "TMPDIR=${TMP_DIR} ${myconfig} >/dev/null"
-	else
-		/bin/sh -c "TMPDIR=${TMP_DIR} ${myconfig} >/dev/null"
-	fi
+	#
+	#DISPLAY=:0 XAUTHORITY=/home/${user}/.Xauthority \
+	/bin/sh -c "TMPDIR=${TMP_DIR} ${myconfig} >/dev/null"
 
 	# remove tap devices if the guest system couldn't be started
 	if [ "$?" != "0" ]; then
 		# only root can remove tap interfaces
-		if [ $(id -u) = 0 ]; then
+		if [ $(id -u) = 0 ] && [ -e "${PID_DIR}/${vmname}.net" ]; then
 			echo "Failed to start ${vmname}, removing qtap interfaces"
 			_stop_tap_devices
 		fi
