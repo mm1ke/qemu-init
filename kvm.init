@@ -123,11 +123,6 @@ start(){
 		exit 1
 	fi
 
-	if $(echo ${myconfig} | grep -q "display sdl"); then
-		local sdl_user=$(${QEMUCC} -u $1)
-		VM_ENABLE_SDL=true
-	fi
-
 	ebegin "Starting ${VM_NAME}..."
 	# Start the Virtual Machine
 	# start guest with /bin/sh, otherwise qemu breaks with
@@ -142,9 +137,11 @@ start(){
 
 	# remove tap devices if the guest system couldn't be started
 	if [ "$?" != "0" ]; then
-		eerror "Failed to start ${VM_NAME}, removing qtap interfaces"
-		_stop_tap_devices
-		return 1
+		if [ -e "${PID_DIR}/${vmname}.net" ]; then
+			eerror "Failed to start ${VM_NAME}, removing qtap interfaces"
+			_stop_tap_devices
+			return 1
+		fi
 	fi
 
 	# set passwords for spice/vnc
@@ -164,48 +161,53 @@ stop(){
 	# set default kill wait to 80 seconds
 	[ -z "${VM_KILL_WAIT}" ] && VM_KILL_WAIT=80
 
-	local KVM_PID="`cat ${PID_DIR}/${VM_NAME}.pid`"
+	if [ -e "${PID_DIR}/${VM_NAME}.pid" ]; then
+		local KVM_PID="`cat ${PID_DIR}/${VM_NAME}.pid`"
 
-	if (ps -p ${KVM_PID} --no-heading >/dev/null 2>&1); then
+		if (ps -p ${KVM_PID} --no-heading >/dev/null 2>&1); then
 
-		ebegin "Stopping ${VM_NAME}"
-		# sending via nc (netcat) the shutdown command
-		echo "system_powerdown" | ${NC} -U -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
-		# waiting for system to shutdown
-		einfon "Waiting ${VM_KILL_WAIT} seconds for ${VM_NAME} to shutdown."
-		local cnt=0
-		while [ -n "`ps -p ${KVM_PID} --no-heading`" ]; do
-			cnt=$(expr ${cnt} + 2)
-			if [ ${cnt} -gt ${VM_KILL_WAIT} ]; then
-				echo
-				eerror " Failed to shuddown ${VM_NAME}, Guest will be killed."
-				# kill qemu
-				kill -9 ${KVM_PID} > /dev/null 2>&1
-				sleep 1
-				ewarn " Killed ${VM_NAME}"
-				break
+			ebegin "Stopping ${VM_NAME}"
+			# sending via nc (netcat) the shutdown command
+			echo "system_powerdown" | ${NC} -U -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
+			# waiting for system to shutdown
+			einfon "Waiting ${VM_KILL_WAIT} seconds for ${VM_NAME} to shutdown."
+			local cnt=0
+			while [ -n "`ps -p ${KVM_PID} --no-heading`" ]; do
+				cnt=$(expr ${cnt} + 2)
+				if [ ${cnt} -gt ${VM_KILL_WAIT} ]; then
+					echo
+					eerror " Failed to shuddown ${VM_NAME}, Guest will be killed."
+					# kill qemu
+					kill -9 ${KVM_PID} > /dev/null 2>&1
+					sleep 1
+					ewarn " Killed ${VM_NAME}"
+					break
+				fi
+				# send system_powerdown every 20 seconds
+				if [ $(( ${cnt} % 20)) = 0 ]; then
+					echo "system_powerdown" | ${NC} -U -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
+				fi
+				sleep 2
+				printf "."
+			done
+			echo
+		else
+			ewarn "Couldn't find the process for ${VM_NAME}, guest might already down."
+			eend 0
+		fi
+
+		_stop_tap_devices
+		# for some reason when running as root qemu doesn't clean up pid/sock files
+		# after we stopped a vm. So lets clean them up manually.
+		for f in qga.sock sock pid; do
+			if [ -e "${PID_DIR}/${VM_NAME}.${f}" ]; then
+				rm ${PID_DIR}/${VM_NAME}.${f}
 			fi
-			# send system_powerdown every 20 seconds
-			if [ $(( ${cnt} % 20)) = 0 ]; then
-				echo "system_powerdown" | ${NC} -U -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
-			fi
-			sleep 2
-			printf "."
 		done
-		echo
 	else
-		ewarn "Couldn't find the process for ${VM_NAME}, guest might already down."
-		eend 0
+		ewarn "No pid file found for ${VM_NAME}. Is the machine even running?"
 	fi
 
-	_stop_tap_devices
-	# for some reason when running as root qemu doesn't clean up pid/sock files
-	# after we stopped a vm. So lets clean them up manually.
-	for f in qga.sock sock pid; do
-		if [ -e "${PID_DIR}/${VM_NAME}.${f}" ]; then
-			rm ${PID_DIR}/${VM_NAME}.${f}
-		fi
-	done
-
 	eend 0
+
 }

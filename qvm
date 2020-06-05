@@ -32,8 +32,8 @@ LSOF="/usr/bin/lsof"					# sys-process/lsof
 
 QEMUCC="/home/ai/coding/qemucc"
 
-# TODO better handling of vmname
-vmname="${2##*.}"
+# TODO better handling of VM_NAME
+VM_NAME="${2##*.}"
 
 # check PID_DIR
 PID_DIR="/run/kvm"
@@ -91,10 +91,10 @@ usage() {
 # check if qemu guest agent where enabled for vm
 _check_qga(){
 	if $(${QGA_AVAILABLE}); then
-		if [ -e ${PID_DIR}/${vmname}.qga.sock ]; then
+		if [ -e ${PID_DIR}/${VM_NAME}.qga.sock ]; then
 			return 0
 		else
-			echo " WARNING: guest agent not active for ${vmname}"
+			echo " WARNING: guest agent not active for ${VM_NAME}"
 			return 1
 		fi
 	else
@@ -104,24 +104,24 @@ _check_qga(){
 }
 
 vm_reboot(){
-	echo "Rebooting ${vmname}"
-	_check_qga && ${QGA} --address=${PID_DIR}/${vmname}.qga.sock reboot
+	echo "Rebooting ${VM_NAME}"
+	_check_qga && ${QGA} --address=${PID_DIR}/${VM_NAME}.qga.sock reboot
 }
 
 vm_reset(){
-	echo "Reseting ${vmname}"
-	echo "system_reset" | ${NC} -U -q1 ${PID_DIR}/${vmname}.sock > /dev/null 2>&1
+	echo "Reseting ${VM_NAME}"
+	echo "system_reset" | ${NC} -U -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
 }
 
 vm_freeze_thaw(){
 	if _check_qga; then
-		local freeze_status="$(${QGA} --address=${PID_DIR}/${vmname}.qga.sock fsfreeze status)"
+		local freeze_status="$(${QGA} --address=${PID_DIR}/${VM_NAME}.qga.sock fsfreeze status)"
 		if [ "${freeze_status}" = "thawed" ]; then
 			echo "Freezing the filesystem"
-			${QGA} --address=${PID_DIR}/${vmname}.qga.sock fsfreeze freeze
+			${QGA} --address=${PID_DIR}/${VM_NAME}.qga.sock fsfreeze freeze
 		elif [ "${freeze_status}" = "frozen" ]; then
 			echo "Thawing the filesystem"
-			${QGA} --address=${PID_DIR}/${vmname}.qga.sock fsfreeze thaw
+			${QGA} --address=${PID_DIR}/${VM_NAME}.qga.sock fsfreeze thaw
 		else
 			echo "Error thawing/freezeing filesystem"
 		fi
@@ -130,14 +130,14 @@ vm_freeze_thaw(){
 
 memory(){
 	ebegin "Changing Memory to ${VM_MEMORY}MB"
-	echo "balloon ${VM_MEMORY}" | ${NC} -U -q1 ${PID_DIR}/${vmname}.sock > /dev/null 2>&1
+	echo "balloon ${VM_MEMORY}" | ${NC} -U -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
 	eend $?
 }
 
 _stop_tap_devices() {
 	# find all linked qtap devices
-	if [ -e "${PID_DIR}/${vmname}.net" ]; then
-		for qtap_id in $(cat ${PID_DIR}/${vmname}.net); do
+	if [ -e "${PID_DIR}/${VM_NAME}.net" ]; then
+		for qtap_id in $(cat ${PID_DIR}/${VM_NAME}.net); do
 			# warn if qtap device doesn't exist anymore
 			if ! $(${BRIDGE} link|grep -o ${qtap_id} >/dev/null); then
 				echo "Couldn't find ${qtap_id} device."
@@ -154,8 +154,8 @@ _stop_tap_devices() {
 
 		done
 		# better safe then sorry
-		if [ -e  "${PID_DIR}/${vmname}.net" ]; then
-			rm -rf ${PID_DIR}/${vmname}.net
+		if [ -e  "${PID_DIR}/${VM_NAME}.net" ]; then
+			rm -rf ${PID_DIR}/${VM_NAME}.net
 		fi
 	fi
 }
@@ -173,7 +173,7 @@ vm_start(){
 	fi
 
 	# Start the Virtual Machine
-	echo "Starting ${vmname}..."
+	echo "Starting ${VM_NAME}..."
 
 	#
 	# start guest with /bin/sh, otherwise qemu breaks with
@@ -185,8 +185,8 @@ vm_start(){
 	# remove tap devices if the guest system couldn't be started
 	if [ "$?" != "0" ]; then
 		# only root can remove tap interfaces
-		if [ $(id -u) = 0 ] && [ -e "${PID_DIR}/${vmname}.net" ]; then
-			echo "Failed to start ${vmname}, removing qtap interfaces"
+		if [ $(id -u) = 0 ] && [ -e "${PID_DIR}/${VM_NAME}.net" ]; then
+			echo "Failed to start ${VM_NAME}, removing qtap interfaces"
 			_stop_tap_devices
 		fi
 		return 1
@@ -195,11 +195,11 @@ vm_start(){
 	# set passwords for spice/vnc
 	if [ -n "${vm_spice_pw}" ]; then
 		echo "set_password spice ${vm_spice_pw}" \
-		| ${NC} -U -q1 ${PID_DIR}/${vmname}.sock > /dev/null 2>&1
+		| ${NC} -U -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
 	fi
 	if [ -n "${vm_vnc_pw}" ]; then
 		echo "set_password vnc ${vm_vnc_pw}" \
-		| ${NC} -U -q1 ${PID_DIR}/${vmname}.sock > /dev/null 2>&1
+		| ${NC} -U -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
 	fi
 }
 
@@ -207,49 +207,53 @@ vm_stop(){
 	# set default kill wait to 80 seconds
 	[ -z "${VM_KILL_WAIT}" ] && VM_KILL_WAIT=80
 
-	local KVM_PID="$(cat ${PID_DIR}/${vmname}.pid)"
+	if [ -e "${PID_DIR}/${VM_NAME}.pid" ]; then
+		local KVM_PID="$(cat ${PID_DIR}/${VM_NAME}.pid)"
 
-	if (ps -p ${KVM_PID} --no-heading >/dev/null 2>&1); then
+		if (ps -p ${KVM_PID} --no-heading >/dev/null 2>&1); then
 
-		echo "Stopping ${vmname}"
-		# sending via nc (netcat) the shutdown command
-		echo "system_powerdown" | ${NC} -U -q1 ${PID_DIR}/${vmname}.sock > /dev/null 2>&1
-		# waiting for system to shutdown
-		echo -n "Waiting ${VM_KILL_WAIT} seconds for ${vmname} to shutdown."
-		local cnt=0
-		while [ -n "$(ps -p ${KVM_PID} --no-heading)" ]; do
-			cnt=$(expr ${cnt} + 2)
-			if [ ${cnt} -gt ${VM_KILL_WAIT} ]; then
-				echo
-				echo " Failed to shuddown ${vmname}, Guest will be killed."
-				# kill qemu
-				kill -9 ${KVM_PID} > /dev/null 2>&1
-				sleep 1
-				echo " Killed ${vmname}"
-				break
-			fi
-			# send system_powerdown every 20 seconds
-			if [ $(( ${cnt} % 20)) = 0 ]; then
-				echo "system_powerdown" | ${NC} -U -q1 ${PID_DIR}/${vmname}.sock > /dev/null 2>&1
-			fi
-			sleep 2
-			printf "."
-		done
-		echo
+			echo "Stopping ${VM_NAME}"
+			# sending via nc (netcat) the shutdown command
+			echo "system_powerdown" | ${NC} -U -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
+			# waiting for system to shutdown
+			echo -n "Waiting ${VM_KILL_WAIT} seconds for ${VM_NAME} to shutdown."
+			local cnt=0
+			while [ -n "$(ps -p ${KVM_PID} --no-heading)" ]; do
+				cnt=$(expr ${cnt} + 2)
+				if [ ${cnt} -gt ${VM_KILL_WAIT} ]; then
+					echo
+					echo " Failed to shuddown ${VM_NAME}, Guest will be killed."
+					# kill qemu
+					kill -9 ${KVM_PID} > /dev/null 2>&1
+					sleep 1
+					echo " Killed ${VM_NAME}"
+					break
+				fi
+				# send system_powerdown every 20 seconds
+				if [ $(( ${cnt} % 20)) = 0 ]; then
+					echo "system_powerdown" | ${NC} -U -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
+				fi
+				sleep 2
+				printf "."
+			done
+			echo
+		else
+			echo "Couldn't find the process for ${VM_NAME}, guest might already down."
+		fi
+
+
+		if [ $(id -u) = 0 ]; then
+			_stop_tap_devices
+			# for some reason when running as root qemu doesn't clean up pid/sock files
+			# after we stopped a vm. So lets clean them up manually.
+			for f in qga.sock sock pid; do
+				if [ -e "${PID_DIR}/${VM_NAME}.${f}" ]; then
+					rm ${PID_DIR}/${VM_NAME}.${f}
+				fi
+			done
+		fi
 	else
-		echo "Couldn't find the process for ${vmname}, guest might already down."
-	fi
-
-
-	if [ $(id -u) = 0 ]; then
-		_stop_tap_devices
-		# for some reason when running as root qemu doesn't clean up pid/sock files
-		# after we stopped a vm. So lets clean them up manually.
-		for f in qga.sock sock pid; do
-			if [ -e "${PID_DIR}/${vmname}.${f}" ]; then
-				rm ${PID_DIR}/${vmname}.${f}
-			fi
-		done
+		echo "No pid file found for ${VM_NAME}. Is the machine even running?"
 	fi
 }
 
