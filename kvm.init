@@ -40,6 +40,7 @@ QEMUCC="/home/ai/coding/qemucc"
 
 # check PID_DIR
 PID_DIR="/run/kvm"
+[ -d ${PID_DIR} ] || mkdir ${PID_DIR}
 # export PID_DIR, because we need it in qemucc
 export PID_DIR
 

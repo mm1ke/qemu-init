@@ -23,6 +23,8 @@
 # Discription:
 # user start/stop/modify script for qemu guest
 
+[ -e ~/.qvm.conf ] && source ~/.qvm.conf
+
 # programs / dependencies
 BRIDGE="/sbin/bridge"					# sys-apps/iproute2
 IP="/bin/ip"									# sys-apps/iproute2
@@ -31,9 +33,6 @@ QGA="/usr/bin/qemu-ga-client"	# app-emulation/qemu[pyhton]
 LSOF="/usr/bin/lsof"					# sys-process/lsof
 
 QEMUCC="/home/ai/coding/qemucc"
-
-# TODO better handling of VM_NAME
-VM_NAME="${2##*.}"
 
 # check PID_DIR
 PID_DIR="/run/kvm"
@@ -72,72 +71,87 @@ usage() {
 	echo -e "$0 -r|--reboot /path/to/config.file|vmname\trestart vmname (via qemu guest agent)"
 	echo -e "$0 -x|--reset /path/to/config.file|vmname\treset vmname"
 	echo -e "$0 -f|--freeze /path/to/config.file|vmname\tfreeze/unfreeze guest filesystem (via qemu guest agent)"
+	echo -e "$0 -l|--list [vmname]\t\t\tlist all vms | list details fo [vmname]"
+	echo
+	echo -e "modify vm"
+	echo -e "$0 -u|--update vmname,[mem,size_in_mb]"
 	#TODO
-	# -l list running vm
-	#echo
-	#echo -e "modify vm"
-	#TODO
-	# -u update vm
-	#  -m memory
 	# send command to guest-agent / qemu socket
 	# adding hw on the fly
-	#echo
-	#echo -e "other settings"
+	echo
+	echo -e "other settings"
+	echo
+	echo -e "$0 -a|--add bridge-dev,tap-name"
+	echo -e "$0 -d|--delete bridge-dev,tap-name"
 	#TODO
-	# create tap interfaces
 	# enter qemu vm console (socket)
+}
+
+_check_running_vm() {
+	local _vm=${1}
+	# now that we defined the vm_name check if it's running at the moment. If
+	# not print a error and return 1. Depending on user context pid can be at
+	# different places, thus we only see vms of the user
+	if ! [ -f "${PID_DIR}/${_vm}.pid" ]; then
+		echo "VM: \"${_vm}\" not running!"
+		exit 1
+	fi
+}
+
+_define_vm() {
+	local _vm_arg=${1}
+	local _vm_name=""
+
+	# check if passed argument is a file
+	if [ -f ${_vm_arg} ]; then
+		# if it's a file check if it belongs to /etc/conf.d, since those config
+		# files start with "kvm." which need to be removed
+		if [ "${_vm_arg}" = "/etc/conf.d/kvm.${_vm_arg##*.}" ]; then
+			_vm_name="${_vm_arg##*.}"
+		# otherwise simply remove the path
+		else
+			_vm_name="${_vm_arg##*/}"
+		fi
+	# if it's not a file use the argument as vm_name
+	else
+		_vm_name="${_vm_arg}"
+	fi
+
+	echo ${_vm_name}
 }
 
 # check if qemu guest agent where enabled for vm
 _check_qga(){
+	_vm=$1
+
 	if $(${QGA_AVAILABLE}); then
-		if [ -e ${PID_DIR}/${VM_NAME}.qga.sock ]; then
+		if [ -e ${PID_DIR}/${_vm}.qga.sock ]; then
 			return 0
 		else
-			echo " WARNING: guest agent not active for ${VM_NAME}"
+			echo "WARNING: guest agent not active for ${_vm}"
 			return 1
 		fi
 	else
-		echo " WARNING: qemu guest agent not available. Install app-emulation/qemu[python]"
+		echo "WARNING: qemu guest agent not available. Install app-emulation/qemu[python]"
 		return 1
 	fi
 }
 
-vm_reboot(){
-	echo "Rebooting ${VM_NAME}"
-	_check_qga && ${QGA} --address=${PID_DIR}/${VM_NAME}.qga.sock reboot
+_vm_memory(){
+	local _vm=$1
+	local _mem=$2
+
+	echo "Changing Memory to ${_mem}MB for ${_vm}"
+	echo "balloon ${_mem}" | ${NC} -U -q1 ${PID_DIR}/${_vm}.sock > /dev/null 2>&1
 }
 
-vm_reset(){
-	echo "Reseting ${VM_NAME}"
-	echo "system_reset" | ${NC} -U -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
-}
-
-vm_freeze_thaw(){
-	if _check_qga; then
-		local freeze_status="$(${QGA} --address=${PID_DIR}/${VM_NAME}.qga.sock fsfreeze status)"
-		if [ "${freeze_status}" = "thawed" ]; then
-			echo "Freezing the filesystem"
-			${QGA} --address=${PID_DIR}/${VM_NAME}.qga.sock fsfreeze freeze
-		elif [ "${freeze_status}" = "frozen" ]; then
-			echo "Thawing the filesystem"
-			${QGA} --address=${PID_DIR}/${VM_NAME}.qga.sock fsfreeze thaw
-		else
-			echo "Error thawing/freezeing filesystem"
-		fi
-	fi
-}
-
-memory(){
-	ebegin "Changing Memory to ${VM_MEMORY}MB"
-	echo "balloon ${VM_MEMORY}" | ${NC} -U -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
-	eend $?
-}
 
 _stop_tap_devices() {
+	local vmname="${1}"
+
 	# find all linked qtap devices
-	if [ -e "${PID_DIR}/${VM_NAME}.net" ]; then
-		for qtap_id in $(cat ${PID_DIR}/${VM_NAME}.net); do
+	if [ -e "${PID_DIR}/${vmname}.net" ]; then
+		for qtap_id in $(cat ${PID_DIR}/${vmname}.net); do
 			# warn if qtap device doesn't exist anymore
 			if ! $(${BRIDGE} link|grep -o ${qtap_id} >/dev/null); then
 				echo "Couldn't find ${qtap_id} device."
@@ -145,39 +159,220 @@ _stop_tap_devices() {
 			fi
 			# remove tap interfaces
 			echo "Removing ${qtap_id} interface"
-			${IP} link set dev ${qtap_id} down || \
-				echo "Failed to bring ${qtap_id} down"
-			${IP} link set ${qtap_id} nomaster || \
-				echo "Failed to unlink the bridge interface to ${qtap_id}"
-			${IP} tuntap del ${qtap_id} mode tap || \
-				echo "Failed to delete tap interface ${qtap_id}"
-
+			${IP} link set dev ${qtap_id} down
+			${IP} link set ${qtap_id} nomaster
+			${IP} tuntap del ${qtap_id} mode tap
 		done
 		# better safe then sorry
-		if [ -e  "${PID_DIR}/${VM_NAME}.net" ]; then
-			rm -rf ${PID_DIR}/${VM_NAME}.net
+		if [ -e  "${PID_DIR}/${vmname}.net" ]; then
+			rm -rf ${PID_DIR}/${vmname}.net
 		fi
 	fi
 }
 
+
+vm_list() {
+	if [ -n "${1}" ]; then
+		local vmname=$(_define_vm ${1})
+		_check_running_vm ${vmname} || exit 1
+	fi
+
+	if [ -z "${vmname}" ]; then
+		echo "Overview of all VMs"
+		echo " System VMs:"
+		for i in $(find /etc/conf.d/ -type f -name kvm.*); do
+			if [ -r /run/kvm ]; then
+				if [ -e /run/kvm/${i##*.}.pid ]; then
+					echo "  U ${i##*.} (PID: $(cat /run/kvm/${i##*.}.pid))"
+				else
+					echo "  D ${i##*.}"
+				fi
+			elif [ -e /${PID_DIR}/${i##*.}.pid ]; then
+				echo "  U ${i##*.} (PID: $(cat ${PID_DIR}/${i##*.}.pid)) (User started)"
+			else
+				echo "  ? ${i##*.}"
+			fi
+		done
+		if [ -n "${CFG_DIR}" ]; then
+			echo " Local VMs:"
+			for i in $(find ${CFG_DIR} -type f); do
+				if [ -e ${PID_DIR}/${i} ]; then
+					echo "  U ${i}$(cat ${PID_DIR}/${i})"
+				else
+					echo "  D ${i}"
+				fi
+			done
+		fi
+	else
+		if [ -e /${PID_DIR}/${vmname}.pid ]; then
+			local _vm_pid="$(cat /${PID_DIR}/${vmname}.pid)"
+			local _vm_starttime="$(ps -o "lstart=" -p ${_vm_pid})"
+			local _vm_uptime="$(ps -o "etime=" -p ${_vm_pid}|tr -d '[:space:]')"
+			local _vm_spice_settings="$(echo "info spice" \
+				| ${NC} -U -q1 ${PID_DIR}/${vmname}.sock 2>&1 \
+				| grep --only-matching --perl-regex "(?<=address\:).*[0-9]" \
+				| head -n1)"
+			local	_vm_vnc_settings="$(echo "info vnc" \
+				| ${NC} -U -q1 ${PID_DIR}/${vmname}.sock 2>&1 \
+				| grep --only-matching --perl-regex "(?<=address\:).*[0-9]" \
+				| head -n1)"
+			echo "Details of ${vmname}:"
+			echo -e " VM started at:\t\t${_vm_starttime}"
+			echo -e " Uptime:\t\t${_vm_uptime}"
+			echo -e " PID:\t\t\t${_vm_pid}"
+			echo " Spice: ${_vm_spice_settings}"
+			echo " VNC: ${_vm_vnc_settings}"
+		fi
+	fi
+}
+
+vm_update() {
+	local args=${1}
+	local _vm="$(echo ${args}|cut -d',' -f1)"
+	local _setting="$(echo ${args}|cut -sd',' -f2)"
+	local _value="$(echo ${args}|cut -sd',' -f3)"
+
+	if [ -z "${_vm}" ] || [ -z "${_setting}" ] || [ -z "${_value}" ]; then
+		echo "missing var: please make sure you passed vmname,setting,value. see: qvm -h"
+		exit 1
+	fi
+
+	local vmname=$(_define_vm ${_vm})
+	_check_running_vm ${vmname} || exit 1
+
+
+	case ${_setting} in
+		mem|memory)
+			_vm_memory ${vmname} ${_value}
+			;;
+	esac
+}
+
+create_network() {
+	local _type="${1%%,*}"
+	local _name="${1##*,}"
+
+	if [ -z "${_type}" ] || [ -z "${_name}" ]; then
+		echo "missing var: please make sure you passed type,name. see: qvm -h"
+		exit 1
+	fi
+
+	if [ -d /sys/class/net/${_type}/bridge/ ]; then
+		echo "creating tap device on bridge: ${_type} called ${_name}..."
+		read -r -d '' CREATE_TAP <<- EOM
+			${IP} tuntap add dev ${_name} mode tap user $(id -un)
+			${IP} link set ${_name} master ${_type}
+			${IP} link set dev ${_name} up promisc on
+		EOM
+		# to create tap we need to run the commands as root
+		su -l root -c "${CREATE_TAP}"
+	#elif
+	else
+		echo "Cannot create ${_type}. Unknown device"
+		exit 1
+	fi
+}
+
+delete_network() {
+	local _type="${1%%,*}"
+	local _name="${1##*,}"
+	if [ -z "${_type}" ] || [ -z "${_name}" ]; then
+		echo "missing var: please make sure you passed type,name. see: qvm -h"
+		exit 1
+	fi
+
+	if [ -d /sys/class/net/${_type}/bridge/ ]; then
+		if ! $(${BRIDGE} link|grep -o ${_name} >/dev/null); then
+			echo "Couldn't find ${_name} device. Not trying to remove it."
+			exit 1
+		fi
+		# remove tap interfaces
+		echo "Removing ${_name} interface"
+		read -r -d '' DELETE_TAP <<- EOM
+			${IP} link set dev ${_name} down
+			${IP} link set ${_name} nomaster
+			${IP} tuntap del ${_name} mode tap
+		EOM
+		su -l root -c "${DELETE_TAP}"
+	#elif
+	else
+		echo "Cannot create ${_type}. Unknown device"
+		exit 1
+	fi
+}
+
+vm_reboot(){
+	local vmname=$(_define_vm ${1})
+	_check_running_vm ${vmname} || exit 1
+
+	echo "Rebooting ${vmname}"
+	_check_qga ${vmname} && ${QGA} --address=${PID_DIR}/${vmname}.qga.sock reboot
+}
+
+vm_reset(){
+	local vmname=$(_define_vm ${1})
+	_check_running_vm ${vmname} || exit 1
+
+	echo "Reseting ${vmname}"
+	echo "system_reset" | ${NC} -U -q1 ${PID_DIR}/${vmname}.sock > /dev/null 2>&1
+	echo "asd"
+}
+
+vm_freeze_thaw(){
+	local vmname=$(_define_vm ${1})
+	_check_running_vm ${vmname} || exit 1
+
+	if _check_qga ${vmname}; then
+		local freeze_status="$(${QGA} --address=${PID_DIR}/${vmname}.qga.sock fsfreeze status)"
+		if [ "${freeze_status}" = "thawed" ]; then
+			echo "Freezing the filesystem"
+			${QGA} --address=${PID_DIR}/${vmname}.qga.sock fsfreeze freeze
+		elif [ "${freeze_status}" = "frozen" ]; then
+			echo "Thawing the filesystem"
+			${QGA} --address=${PID_DIR}/${vmname}.qga.sock fsfreeze thaw
+		else
+			echo "Error thawing/freezeing filesystem"
+		fi
+	fi
+}
+
+
 vm_start(){
-	myconfig=$(${QEMUCC} --checkandcreate $1)
+	local vm_config_file=${1}
+
+	if ! [ -f ${vm_config_file} ]; then
+		if [ -f "${CFG_DIR}/${vm_config_file}" ]; then
+			vmname="${vm_config_file}"
+			vm_config_file="${CFG_DIR}/${vm_config_file}"
+		else
+			echo "config file \"${CFG_DIR}${vm_config_file}\" not found."
+			exit 1
+		fi
+	else
+		if [ "${_vm_config_file}" = "/etc/conf.d/kvm.${_vm_config_file##*.}" ]; then
+			vmname="${_vm_config_file##*.}"
+		else
+			vmname="${_vm_config_file##*/}"
+		fi
+	fi
+
+	local myconfig=$(${QEMUCC} --checkandcreate ${vm_config_file})
 	# password are only returned if remote access is enabled
-	vm_spice_pw=$(${QEMUCC} -s $1)
-	vm_vnc_pw=$(${QEMUCC} -v $1)
+	local vm_spice_pw=$(${QEMUCC} -s ${vm_config_file})
+	local vm_vnc_pw=$(${QEMUCC} -v ${vm_config_file})
 
 	# if ${myconfig} is empty something went wrong
 	if [ -z "${myconfig}" ]; then
 		echo "Something went wrong while creating the vm-config. Please check previous message(s)"
-		return 1
+		exit 1
 	fi
 
 	# Start the Virtual Machine
-	echo "Starting ${VM_NAME}..."
+	echo "Starting ${vmname}..."
 
 	#
 	# start guest with /bin/sh, otherwise qemu breaks with
-	# multiple append statements (probably a qemu or runscript bug)
+	# multiple append statements (probably a bug)
 	#
 	#DISPLAY=:0 XAUTHORITY=/home/${user}/.Xauthority \
 	/bin/sh -c "TMPDIR=${TMP_DIR} ${myconfig} >/dev/null"
@@ -185,81 +380,83 @@ vm_start(){
 	# remove tap devices if the guest system couldn't be started
 	if [ "$?" != "0" ]; then
 		# only root can remove tap interfaces
-		if [ $(id -u) = 0 ] && [ -e "${PID_DIR}/${VM_NAME}.net" ]; then
-			echo "Failed to start ${VM_NAME}, removing qtap interfaces"
-			_stop_tap_devices
+		if [ $(id -u) = 0 ] && [ -e "${PID_DIR}/${vmname}.net" ]; then
+			echo "Failed to start ${vmname}, removing qtap interfaces"
+			_stop_tap_devices ${vmname}
 		fi
-		return 1
+		exit 1
 	fi
 
 	# set passwords for spice/vnc
 	if [ -n "${vm_spice_pw}" ]; then
 		echo "set_password spice ${vm_spice_pw}" \
-		| ${NC} -U -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
+		| ${NC} -U -q1 ${PID_DIR}/${vmname}.sock > /dev/null 2>&1
 	fi
 	if [ -n "${vm_vnc_pw}" ]; then
 		echo "set_password vnc ${vm_vnc_pw}" \
-		| ${NC} -U -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
+		| ${NC} -U -q1 ${PID_DIR}/${vmname}.sock > /dev/null 2>&1
 	fi
 }
 
 vm_stop(){
+	local vmname=$(_define_vm ${1})
+	_check_running_vm ${vmname} || exit 1
+
 	# set default kill wait to 80 seconds
 	[ -z "${VM_KILL_WAIT}" ] && VM_KILL_WAIT=80
 
-	if [ -e "${PID_DIR}/${VM_NAME}.pid" ]; then
-		local KVM_PID="$(cat ${PID_DIR}/${VM_NAME}.pid)"
+	local KVM_PID="$(cat ${PID_DIR}/${vmname}.pid)"
 
-		if (ps -p ${KVM_PID} --no-heading >/dev/null 2>&1); then
+	if (ps -p ${KVM_PID} --no-heading >/dev/null 2>&1); then
 
-			echo "Stopping ${VM_NAME}"
-			# sending via nc (netcat) the shutdown command
-			echo "system_powerdown" | ${NC} -U -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
-			# waiting for system to shutdown
-			echo -n "Waiting ${VM_KILL_WAIT} seconds for ${VM_NAME} to shutdown."
-			local cnt=0
-			while [ -n "$(ps -p ${KVM_PID} --no-heading)" ]; do
-				cnt=$(expr ${cnt} + 2)
-				if [ ${cnt} -gt ${VM_KILL_WAIT} ]; then
-					echo
-					echo " Failed to shuddown ${VM_NAME}, Guest will be killed."
-					# kill qemu
-					kill -9 ${KVM_PID} > /dev/null 2>&1
-					sleep 1
-					echo " Killed ${VM_NAME}"
-					break
-				fi
-				# send system_powerdown every 20 seconds
-				if [ $(( ${cnt} % 20)) = 0 ]; then
-					echo "system_powerdown" | ${NC} -U -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
-				fi
-				sleep 2
-				printf "."
-			done
-			echo
-		else
-			echo "Couldn't find the process for ${VM_NAME}, guest might already down."
-		fi
-
-
-		if [ $(id -u) = 0 ]; then
-			_stop_tap_devices
-			# for some reason when running as root qemu doesn't clean up pid/sock files
-			# after we stopped a vm. So lets clean them up manually.
-			for f in qga.sock sock pid; do
-				if [ -e "${PID_DIR}/${VM_NAME}.${f}" ]; then
-					rm ${PID_DIR}/${VM_NAME}.${f}
-				fi
-			done
-		fi
+		echo "Stopping ${vmname}"
+		# sending via nc (netcat) the shutdown command
+		echo "system_powerdown" | ${NC} -U -q1 ${PID_DIR}/${vmname}.sock > /dev/null 2>&1
+		# waiting for system to shutdown
+		echo -n "Waiting ${VM_KILL_WAIT} seconds for ${vmname} to shutdown."
+		local cnt=0
+		while [ -n "$(ps -p ${KVM_PID} --no-heading)" ]; do
+			cnt=$(expr ${cnt} + 2)
+			if [ ${cnt} -gt ${VM_KILL_WAIT} ]; then
+				echo
+				echo " Failed to shuddown ${vmname}, Guest will be killed."
+				# kill qemu
+				kill -9 ${KVM_PID} > /dev/null 2>&1
+				sleep 1
+				echo " Killed ${vmname}"
+				break
+			fi
+			# send system_powerdown every 20 seconds
+			if [ $(( ${cnt} % 20)) = 0 ]; then
+				echo "system_powerdown" | ${NC} -U -q1 ${PID_DIR}/${vmname}.sock > /dev/null 2>&1
+			fi
+			sleep 2
+			printf "."
+		done
+		echo
 	else
-		echo "No pid file found for ${VM_NAME}. Is the machine even running?"
+		echo "Couldn't find the process for ${vmname}, guest might already down."
+	fi
+
+
+	if [ $(id -u) = 0 ]; then
+		_stop_tap_devices ${vmname}
+		# for some reason when running as root qemu doesn't clean up pid/sock files
+		# after we stopped a vm. So lets clean them up manually.
+		for f in qga.sock sock pid; do
+			if [ -e "${PID_DIR}/${vmname}.${f}" ]; then
+				rm ${PID_DIR}/${vmname}.${f}
+			fi
+		done
 	fi
 }
 
+
+
+# start of the script
 if [ $# -lt 1 ]; then usage; exit; fi
 
-OPTS=$(getopt -o b:s:r:x:f: --long boot:,stop:,reboot:,reset:,freeze: -n 'qvm' -- "$@")
+OPTS=$(getopt -o b:s:r:x:f:a:d:l::u: --long boot:,stop:,reboot:,reset:,freeze:,add:,delete:,list::,update: -n 'qvm' -- "$@")
 eval set -- "$OPTS"
 
 while true; do
@@ -267,27 +464,47 @@ while true; do
 		-b|--boot)
 			case "$2" in
 				"") shift 2 ;;
-				*) vm_start "$2" ; shift 2 ;;
+				*) vm_start "$2" ; exit ; shift 2 ;;
 			esac ;;
 		-s|--stop)
 			case "$2" in
 				"") shift 2 ;;
-				*) vm_stop "$2" ; shift 2 ;;
+				*) vm_stop "$2" ; exit ; shift 2 ;;
 			esac ;;
 		-r|--reboot)
 			case "$2" in
 				"") shift 2 ;;
-				*) vm_reboot "$2" ; shift 2 ;;
+				*) vm_reboot "$2" ; exit ; shift 2 ;;
 			esac ;;
 		-x|--reset)
 			case "$2" in
 				"") shift 2 ;;
-				*) vm_reset "$2" ; shift 2 ;;
+				*) vm_reset "$2" ; exit ; shift 2 ;;
 			esac ;;
 		-f|--freeze)
 			case "$2" in
 				"") shift 2 ;;
-				*) vm_freeze_thaw "$2" ; shift 2 ;;
+				*) vm_freeze_thaw "$2" ; exit ; shift 2 ;;
+			esac ;;
+		-a|--add)
+			case "$2" in
+				"") shift 2 ;;
+				*) create_network $2 ; exit ; shift 2 ;;
+			esac ;;
+		-d|--delete)
+			case "$2" in
+				"") shift 2 ;;
+				*) delete_network $2 ; exit ; shift 2 ;;
+			esac ;;
+		-u|--update)
+			case "$2" in
+				"") shift 2 ;;
+				*) vm_update $2 ; exit ; shift 2 ;;
+			esac ;;
+		-l|--list)
+			case "$2" in
+				"") vm_list ; exit ; shift 2 ;;
+				*) vm_list $2 ; exit ; shift 2 ;;
 			esac ;;
 		--) shift ; break ;;
 		*) echo "Internal error!"; exit 1 ;;
