@@ -60,27 +60,34 @@ depend(){
 }
 
 _stop_tap_devices() {
+	local ready_to_delete=true
 	# find all linked qtap devices
 	if [ -e "${PID_DIR}/${VM_NAME}.net" ]; then
 		for qtap_id in $(cat ${PID_DIR}/${VM_NAME}.net); do
-			# warn if qtap device doesn't exist anymore
-			if ! $(${BRIDGE} link|grep -o ${qtap_id} >/dev/null); then
-				ewarn "Couldn't find ${qtap_id} device."
-				continue
-			fi
-			# remove tap interfaces
-			einfo "Removing ${qtap_id} interface"
-			${IP} link set dev ${qtap_id} down
-			eend $? "Failed to bring ${qtap_id} down"
-			${IP} link set ${qtap_id} nomaster
-			eend $? "Failed to unlink the bridge interface to ${qtap_id}"
-			${IP} tuntap del ${qtap_id} mode tap
-			eend $? "Failed to delete tap interface ${qtap_id}"
+			if [ -e /sys/class/net/${qtap_id}/tun_flags ]; then
+				# remove tap interfaces
+				einfo "Removing ${qtap_id} interface"
+				${IP} link set dev ${qtap_id} down
+				eend $? "Failed to bring ${qtap_id} down"
+				${IP} link set ${qtap_id} nomaster
+				eend $? "Failed to unlink the bridge interface to ${qtap_id}"
+				${IP} tuntap del ${qtap_id} mode tap
+				eend $? "Failed to delete tap interface ${qtap_id}"
 
+				if [ -d /sys/class/net/${qtap_id}/ ]; then
+					ready_to_delete=false
+				fi
+			else
+				ewarn "WARNING: Couldn't remove ${qtap_id}. Unknown device"
+			fi
 		done
 		# better safe then sorry
 		if [ -e  "${PID_DIR}/${VM_NAME}.net" ]; then
-			rm -rf ${PID_DIR}/${VM_NAME}.net
+			if ${ready_to_delete}; then
+				rm -rf ${PID_DIR}/${vmname}.net
+			else
+				ewarn "WARNING: couldn't delete all network interfaces."
+			fi
 		fi
 	fi
 }
