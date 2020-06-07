@@ -43,8 +43,11 @@ if [ "${2}" = "/etc/conf.d/kvm.${2##*.}" ]; then
 else
 	VM_NAME="${2##*/}"
 fi
+
 # default message
 DEFAULT_MSG="Please check your config (${2})"
+
+SET_USER="true"
 
 loginfo() { while IFS='' read -r line; do >&2 echo -e "${YELLOW} * ${NC}${line}"; done }
 logerr() { while IFS='' read -r line; do >&2 echo -e "${LIGHTRED} * ${NC}${line}"; done }
@@ -56,7 +59,12 @@ EOM
 usage() {
 	echo -e "$0"
 	echo
-	echo -e "$0" /path/to/config.file
+	echo -e "Check a qemu-init config file for it's correctness"
+	echo
+	echo -e "$0 -c|--check /path/to/config.file\t\tcheck config file and print out the qemu runconfig"
+	echo -e "$0 --checkandcreate /path/to/config.file\t\tlike -c|--check but actually create tap devices if needed (root required)"
+	echo -e "$0 -s|--spice /path/to/config.file\t\tprint out spice password if set"
+	echo -e "$0 -v|--vnc /path/to/config.file\t\t\tprint out vnc password if set"
 }
 
 _check_remote_access_port(){
@@ -129,66 +137,47 @@ _cfg_network_check(){
 					echo "No bridge device setup! ${DEFAULT_MSG}" | (logerr)
 					return 1
 				fi
-				# enumerate qtap id only works when using the script as root
-				if [ "$(id -u)" = 0 ]; then
-					# check for max_vms
-					if [ ${_net_id} -ge ${MAX_QTAP} ]; then
-						echo "Maximum number of network connections reached. Please increase the MAX_QTAP variable." | (logerr)
+				# check for max_vms
+				if [ ${_net_id} -ge ${MAX_QTAP} ]; then
+					echo "Maximum number of network connections reached. Please increase the MAX_QTAP variable." | (logerr)
+					return 1
+				fi
+				if [ -n "${net_qtp}" ]; then
+					if ! [ -f /sys/class/net/${net_qtp}/tun_flags ]; then
+						echo "\"${net_qtp}\" is not a tun/tap device. ${DEFAULT_MSG}" | (logerr)
 						return 1
-					fi
-					if [ -n "${net_qtp}" ]; then
-						if ! [ -f /sys/class/net/${net_qtp}/tun_flags ]; then
-							echo "\"${net_qtp}\" is not a tun/tap device. ${DEFAULT_MSG}" | (logerr)
-							return 1
-						else
-							if ${_random_mac}; then
-								echo "mac address \"${net_mac}\" for ${net_qtp} is random and will be lost after shutdown" | (loginfo)
-							fi
-							VM_NET="${VM_NET} \
-								-netdev tap,id="${VM_NAME}_${_net_id}",ifname=${net_qtp},script=no,downscript=no${_vhost_set} \
-								-device ${net_drv},netdev="${VM_NAME}_${_net_id}",mac=${net_mac}"
-						fi
 					else
-						# get the guest_nummber for qtap...
-						while (${BRIDGE} link | egrep -o qtap${_net_id} >/dev/null 2>&1); do
-							_net_id=$(expr ${_net_id} + 1)
-						done
 						if ${_random_mac}; then
-							echo "mac address \"${net_mac}\" for qtap${_net_id} is random and will be lost after shutdown" | (loginfo)
+							echo "mac address \"${net_mac}\" for ${net_qtp} is random and will be lost after shutdown" | (loginfo)
 						fi
 						VM_NET="${VM_NET} \
-							-netdev tap,id="${VM_NAME}_${_net_id}",ifname=qtap${_net_id},script=no,downscript=no${_vhost_set} \
+							-netdev tap,id="${VM_NAME}_${_net_id}",ifname=${net_qtp},script=no,downscript=no${_vhost_set} \
 							-device ${net_drv},netdev="${VM_NAME}_${_net_id}",mac=${net_mac}"
-						# this is the network start script which later gets executed via /bin/sh
-						# the ';' at the last line makes sure that there is a correct
-						# linebreak
-						read -r -d '' VM_TAPSTART <<- EOM
-							${IP} tuntap add dev qtap${_net_id} mode tap user ${VM_USER}
-							${IP} link set qtap${_net_id} master ${net_brd}
-							${IP} link set dev qtap${_net_id} up promisc on
-							echo "qtap${_net_id} " >> ${PID_DIR}/${VM_NAME}.net ;
-						EOM
-						VM_NETSTART+="${VM_TAPSTART}"
 					fi
 				else
-					if [ -n "${net_qtp}" ]; then
-						if ! [ -f /sys/class/net/${net_qtp}/tun_flags ]; then
-							echo "\"${net_qtp}\" is not a tun/tap device. ${DEFAULT_MSG}" | (loginfo)
-							return 1
-						else
-							if ${_random_mac}; then
-								echo "mac address \"${net_mac}\" for ${net_qtp} is random and will be lost after shutdown" | (loginfo)
-							fi
-							VM_NET="${VM_NET} \
-								-netdev tap,id="${VM_NAME}_${_net_id}",ifname=${net_qtp},script=no,downscript=no \
-								-device ${net_drv},netdev="${VM_NAME}_${_net_id}",mac=${net_mac}"
-						fi
-					else
-						echo "Part of the network config doesn't include a definded tap device. This means you have following options: " | (logerr)
-						echo " - run the script as root. This way tap devices are created automatically by the script." | (logerr)
-						echo " - create tap devices manually (only possible as root, see: qvm -h) and update the configuration" | (logerr)
-						return 1
+					if ! [ "$(id -u)" = 0 ]; then
+						echo "Warning: Need to create tap devices. Root access needed!" | (loginfo)
 					fi
+					# get the guest_nummber for qtap...
+					while (${BRIDGE} link | egrep -o qtap${_net_id} >/dev/null 2>&1); do
+						_net_id=$(expr ${_net_id} + 1)
+					done
+					if ${_random_mac}; then
+						echo "mac address \"${net_mac}\" for qtap${_net_id} is random and will be lost after shutdown" | (loginfo)
+					fi
+					VM_NET="${VM_NET} \
+						-netdev tap,id="${VM_NAME}_${_net_id}",ifname=qtap${_net_id},script=no,downscript=no${_vhost_set} \
+						-device ${net_drv},netdev="${VM_NAME}_${_net_id}",mac=${net_mac}"
+					# this is the network start script which later gets executed via /bin/sh
+					# the ';' at the last line makes sure that there is a correct
+					# linebreak
+					read -r -d '' VM_TAPSTART <<- EOM
+						${IP} tuntap add dev qtap${_net_id} mode tap user ${VM_USER}
+						${IP} link set qtap${_net_id} master ${net_brd}
+						${IP} link set dev qtap${_net_id} up promisc on
+						echo "qtap${_net_id} " >> ${PID_DIR}/${VM_NAME}.net ;
+					EOM
+					VM_NETSTART+="${VM_TAPSTART}"
 				fi
 				;;
 			user)
@@ -198,7 +187,7 @@ _cfg_network_check(){
 				fi
 				_net_user_set=true
 				if ${_random_mac}; then
-					echo "mac address \"${net_mac}\" for ${VM_NAME} is random and will be lost after shutdown" | (loginfo)
+					echo "mac address \"${net_mac}\" for usernet is random and will be lost after shutdown" | (loginfo)
 				fi
 				VM_NET="${VM_NET} \
 						-netdev user,id=${VM_NAME}_${_net_id} \
@@ -364,8 +353,8 @@ _cfgcheck(){
 			VM_ENABLE_GL=false
 		fi
 	else
-		# if run as non root, unset VM_USER so that the script avoids using -runas
-		VM_USER=""
+		# if run as non root, set SET_USER to false to avoid using -runas
+		SET_USER="false"
 	fi
 
 	# check if SDL can be enabled (needs .Xauthority file)
@@ -437,7 +426,7 @@ _myconfig(){
 		-machine ${VM_MACHINE:-pc} \
 		-k ${VM_LC:-de}"
 
-	[ -z "${VM_USER}" ] || myconfig="${myconfig} -runas ${VM_USER}"
+	${SET_USER} && myconfig="${myconfig} -runas ${VM_USER}"
 	[ -z "${VM_CPU}" ] || myconfig="${myconfig} -cpu ${VM_CPU}"
 
 	if [ -n "${VM_KERNEL}" ]; then
@@ -528,13 +517,9 @@ get_vnc_pw() {
 	fi
 }
 
-get_user() {
-	echo ${VM_USER}
-}
-
 if [ $# -lt 2 ]; then usage; exit; fi
 
-OPTS=$(getopt -o c:s:v:u: --long check:,spice:,vnc:,user:,checkandcreate: -n 'qvm' -- "$@")
+OPTS=$(getopt -o c:s:v: --long check:,spice:,vnc:,checkandcreate: -n 'qvm' -- "$@")
 eval set -- "$OPTS"
 
 myconfig=""
@@ -545,7 +530,12 @@ while true; do
 			case "$2" in
 				"") shift 2 ;;
 				*)
-					source $2
+					if [ -r ${2} ]; then
+						source $2
+					else
+						echo "couldn't read ${2}. Permission denied"
+						exit 1
+					fi
 					if _cfgcheck; then
 						_myconfig
 						# if cfgcheck passed and myconfig is generated start to create the
@@ -553,7 +543,12 @@ while true; do
 						case "$1" in
 							--checkandcreate)
 								if [ -n "${VM_NETSTART}" ]; then
-									su -l root -c "${VM_NETSTART}"
+									if [ -e "${PID_DIR}/${VM_NAME}.net" ]; then
+										echo "${PID_DIR}/${VM_NAME}.net already exists. Aborting tap interface creation!" | (logerr)
+										exit 1
+									else
+										su -l root -c "${VM_NETSTART}"
+									fi
 								fi
 								;;
 							*)
@@ -581,11 +576,6 @@ while true; do
 			case "$2" in
 				"") shift 2 ;;
 				*) source $2 ; get_vnc_pw ; shift 2 ;;
-			esac ;;
-		-u|--user)
-			case "$2" in
-				"") shift 2 ;;
-				*) source $2 ; get_user ; shift 2 ;;
 			esac ;;
 		--) shift ; break ;;
 		*) echo "Internal error!" | (logerr) ; exit 1 ;;

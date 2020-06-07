@@ -31,7 +31,6 @@ IP="/bin/ip"									# sys-apps/iproute2
 NC="/usr/bin/nc"							# net-analyzer/openbsd-netcat
 QGA="/usr/bin/qemu-ga-client"	# app-emulation/qemu[pyhton]
 LSOF="/usr/bin/lsof"					# sys-process/lsof
-
 QEMUCC="/home/ai/coding/qemucc"
 
 # check PID_DIR
@@ -148,24 +147,25 @@ _vm_memory(){
 
 _stop_tap_devices() {
 	local vmname="${1}"
+	local ready_to_delete=true
 
 	# find all linked qtap devices
 	if [ -e "${PID_DIR}/${vmname}.net" ]; then
 		for qtap_id in $(cat ${PID_DIR}/${vmname}.net); do
-			# warn if qtap device doesn't exist anymore
-			if ! $(${BRIDGE} link|grep -o ${qtap_id} >/dev/null); then
-				echo "Couldn't find ${qtap_id} device."
-				continue
+			# check if qtap_id is a tap device
+			delete_network bridge,${qtap_id}
+			if [ -d /sys/class/net/${qtap_id}/ ]; then
+				ready_to_delete=false
 			fi
-			# remove tap interfaces
-			echo "Removing ${qtap_id} interface"
-			${IP} link set dev ${qtap_id} down
-			${IP} link set ${qtap_id} nomaster
-			${IP} tuntap del ${qtap_id} mode tap
 		done
 		# better safe then sorry
 		if [ -e  "${PID_DIR}/${vmname}.net" ]; then
-			rm -rf ${PID_DIR}/${vmname}.net
+			# only delete this file if we could remove all interfaces
+			if ${ready_to_delete}; then
+				rm -rf ${PID_DIR}/${vmname}.net
+			else
+				echo "Warning: couldn't delete all network interfaces."
+			fi
 		fi
 	fi
 }
@@ -196,10 +196,10 @@ vm_list() {
 		if [ -n "${CFG_DIR}" ]; then
 			echo " Local VMs:"
 			for i in $(find ${CFG_DIR} -type f); do
-				if [ -e ${PID_DIR}/${i} ]; then
-					echo "  U ${i}$(cat ${PID_DIR}/${i})"
+				if [ -e ${PID_DIR}/${i##*/}.pid ]; then
+					echo "  U ${i##*/} (PID: $(cat ${PID_DIR}/${i##*/}.pid))"
 				else
-					echo "  D ${i}"
+					echo "  D ${i##*/}"
 				fi
 			done
 		fi
@@ -268,7 +268,7 @@ create_network() {
 		su -l root -c "${CREATE_TAP}"
 	#elif
 	else
-		echo "Cannot create ${_type}. Unknown device"
+		echo "Cannot create ${_name}. ${_type} is not support"
 		exit 1
 	fi
 }
@@ -281,23 +281,27 @@ delete_network() {
 		exit 1
 	fi
 
-	if [ -d /sys/class/net/${_type}/bridge/ ]; then
-		if ! $(${BRIDGE} link|grep -o ${_name} >/dev/null); then
-			echo "Couldn't find ${_name} device. Not trying to remove it."
-			exit 1
-		fi
+	if [ -e /sys/class/net/${_name}/tun_flags ]; then
 		# remove tap interfaces
 		echo "Removing ${_name} interface"
-		read -r -d '' DELETE_TAP <<- EOM
-			${IP} link set dev ${_name} down
-			${IP} link set ${_name} nomaster
+		if [ "$(cat /sys/class/net/${_name}/owner)" = "$(id -u)" ]; then
 			${IP} tuntap del ${_name} mode tap
-		EOM
-		su -l root -c "${DELETE_TAP}"
+		else
+			# print a warning if tap devices doesn't belong to user (only for non-root
+			# users)
+			if ! [ $(id -u) = 0 ]; then
+				echo "Warning: ${_name} belongs to user: $(cat /sys/class/net/${_name}/owner)"
+			fi
+			read -r -d '' DELETE_TAP <<- EOM
+				${IP} link set dev ${_name} down
+				${IP} link set ${_name} nomaster
+				${IP} tuntap del ${_name} mode tap
+			EOM
+			su -l root -c "${DELETE_TAP}"
+		fi
 	#elif
 	else
-		echo "Cannot create ${_type}. Unknown device"
-		exit 1
+		echo "Couldn't remove ${_name}. Unknown device"
 	fi
 }
 
@@ -339,11 +343,14 @@ vm_freeze_thaw(){
 
 vm_start(){
 	local vm_config_file=${1}
+	if [ $(id -u) = 0 ] && [ -z "${CFG_DIR}" ]; then
+		CFG_DIR="/etc/conf.d/kvm."
+	fi
 
 	if ! [ -f ${vm_config_file} ]; then
-		if [ -f "${CFG_DIR}/${vm_config_file}" ]; then
+		if [ -f "${CFG_DIR}${vm_config_file}" ]; then
 			vmname="${vm_config_file}"
-			vm_config_file="${CFG_DIR}/${vm_config_file}"
+			vm_config_file="${CFG_DIR}${vm_config_file}"
 		else
 			echo "config file \"${CFG_DIR}${vm_config_file}\" not found."
 			exit 1
@@ -438,11 +445,11 @@ vm_stop(){
 		echo "Couldn't find the process for ${vmname}, guest might already down."
 	fi
 
+	_stop_tap_devices ${vmname}
 
+	# for some reason when running as root qemu doesn't clean up pid/sock files
+	# after we stopped a vm. So lets clean them up manually.
 	if [ $(id -u) = 0 ]; then
-		_stop_tap_devices ${vmname}
-		# for some reason when running as root qemu doesn't clean up pid/sock files
-		# after we stopped a vm. So lets clean them up manually.
 		for f in qga.sock sock pid; do
 			if [ -e "${PID_DIR}/${vmname}.${f}" ]; then
 				rm ${PID_DIR}/${vmname}.${f}
