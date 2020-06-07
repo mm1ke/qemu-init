@@ -414,7 +414,7 @@ vm_stop(){
 
 	local KVM_PID="$(cat ${PID_DIR}/${vmname}.pid)"
 
-	if (ps -p ${KVM_PID} --no-heading >/dev/null 2>&1); then
+	if (kill -0 ${KVM_PID} >/dev/null 2>&1); then
 
 		echo "Stopping ${vmname}"
 		# sending via nc (netcat) the shutdown command

@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 # Filename: qemucc
 # Autor: Michael Mair-Keimberger (m DOT mairkeimberger AT gmail DOT com)
@@ -382,7 +382,9 @@ _cfgcheck(){
 	fi
 
 	# guest wont start with "host" cpu if kvm is disabled
-	[ "${VM_CPU}" = "host" ] && VM_ENABLE_KVM="true"
+	if [ "${VM_CPU}" = "host" ] && [ -z "${VM_ACCEL}" ]; then
+		VM_ACCEL="kvm"
+	fi
 
 	# arch spezific configuration
 	case ${VM_ARCH} in
@@ -426,16 +428,18 @@ _myconfig(){
 		-machine ${VM_MACHINE:-pc} \
 		-k ${VM_LC:-de}"
 
+	# set runas user
 	${SET_USER} && myconfig="${myconfig} -runas ${VM_USER}"
-	[ -z "${VM_CPU}" ] || myconfig="${myconfig} -cpu ${VM_CPU}"
+	# set cpu
+	[ -n "${VM_CPU}" ] && myconfig="${myconfig} -cpu ${VM_CPU}"
+	# set vm accel
+	[ -n "${VM_ACCEL}" ] && myconfig="${myconfig} -accel ${VM_ACCEL}"
 
 	if [ -n "${VM_KERNEL}" ]; then
 		myconfig="${myconfig} -kernel ${VM_KERNEL} -initrd ${VM_INITRD}"
-		[ -z "${VM_APPEND}" ] || myconfig="${myconfig} -append \"${VM_APPEND}\""
+		[ -n "${VM_APPEND}" ] && myconfig="${myconfig} -append \"${VM_APPEND}\""
 	fi
 
-	# enable/disable kvm
-	(${VM_ENABLE_KVM:-true}) && myconfig="${myconfig} -enable-kvm"
 	# enable/disable usb support
 	(${VM_ENABLE_USB:-true}) && myconfig="${myconfig} -usb"
 	# daemonize true/false

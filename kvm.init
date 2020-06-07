@@ -30,12 +30,9 @@ description_reboot="reboots the virtual machine via the qemu guest agent"
 description_reset="resets the virtual maschine"
 
 # programs / dependencies
-BRIDGE="/sbin/bridge"					# sys-apps/iproute2
 IP="/bin/ip"									# sys-apps/iproute2
 NC="/usr/bin/nc"							# net-analyzer/openbsd-netcat
 QGA="/usr/bin/qemu-ga-client"	# app-emulation/qemu[pyhton]
-LSOF="/usr/bin/lsof"					# sys-process/lsof
-
 QEMUCC="/home/ai/coding/qemucc"
 
 # check PID_DIR
@@ -170,9 +167,9 @@ stop(){
 	[ -z "${VM_KILL_WAIT}" ] && VM_KILL_WAIT=80
 
 	if [ -e "${PID_DIR}/${VM_NAME}.pid" ]; then
-		local KVM_PID="`cat ${PID_DIR}/${VM_NAME}.pid`"
+		local KVM_PID="$(cat ${PID_DIR}/${VM_NAME}.pid)"
 
-		if (ps -p ${KVM_PID} --no-heading >/dev/null 2>&1); then
+		if (kill -0 ${KVM_PID} >/dev/null 2>&1); then
 
 			ebegin "Stopping ${VM_NAME}"
 			# sending via nc (netcat) the shutdown command
@@ -180,7 +177,7 @@ stop(){
 			# waiting for system to shutdown
 			einfon "Waiting ${VM_KILL_WAIT} seconds for ${VM_NAME} to shutdown."
 			local cnt=0
-			while [ -n "`ps -p ${KVM_PID} --no-heading`" ]; do
+			while [ -n "$(ps -p ${KVM_PID} --no-heading)" ]; do
 				cnt=$(expr ${cnt} + 2)
 				if [ ${cnt} -gt ${VM_KILL_WAIT} ]; then
 					echo
