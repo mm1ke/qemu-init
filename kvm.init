@@ -84,7 +84,7 @@ _stop_tap_devices() {
 		# better safe then sorry
 		if [ -e  "${PID_DIR}/${VM_NAME}.net" ]; then
 			if ${ready_to_delete}; then
-				rm -rf ${PID_DIR}/${vmname}.net
+				rm -rf ${PID_DIR}/${VM_NAME}.net
 			else
 				ewarn "WARNING: couldn't delete all network interfaces."
 			fi
