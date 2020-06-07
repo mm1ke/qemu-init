@@ -23,7 +23,7 @@
 # Discription:
 # start/stop script for qemu guests
 
-extra_commands="reboot reset memory restartdelay"
+extra_commands="reboot reset"
 
 description="Start Qemu guests"
 description_reboot="reboots the virtual machine via the qemu guest agent"
