@@ -148,7 +148,7 @@ _cfg_network_check(){
 						return 1
 					else
 						if ${_random_mac}; then
-							echo "mac address \"${net_mac}\" for ${net_qtp} is random and will be lost after shutdown" | (loginfo)
+							echo "MAC address \"${net_mac}\" for ${net_qtp} is random and will be lost after shutdown" | (loginfo)
 						fi
 						VM_NET="${VM_NET} \
 							-netdev tap,id="${VM_NAME}_${_net_id}",ifname=${net_qtp},script=no,downscript=no${_vhost_set} \
@@ -163,7 +163,7 @@ _cfg_network_check(){
 						_net_id=$(expr ${_net_id} + 1)
 					done
 					if ${_random_mac}; then
-						echo "mac address \"${net_mac}\" for qtap${_net_id} is random and will be lost after shutdown" | (loginfo)
+						echo "MAC address \"${net_mac}\" for qtap${_net_id} is random and will be lost after shutdown" | (loginfo)
 					fi
 					VM_NET="${VM_NET} \
 						-netdev tap,id="${VM_NAME}_${_net_id}",ifname=qtap${_net_id},script=no,downscript=no${_vhost_set} \
@@ -187,7 +187,7 @@ _cfg_network_check(){
 				fi
 				_net_user_set=true
 				if ${_random_mac}; then
-					echo "mac address \"${net_mac}\" for usernet is random and will be lost after shutdown" | (loginfo)
+					echo "MAC address \"${net_mac}\" for usernet is random and will be lost after shutdown" | (loginfo)
 				fi
 				VM_NET="${VM_NET} \
 						-netdev user,id=${VM_NAME}_${_net_id} \
@@ -226,7 +226,7 @@ _cfg_9p_check() {
 				-fsdev local,id="${VM_NAME}_9p_${_9p_id}",path="${share_path}",security_model="${share_secm}" \
 				-device virtio-9p-pci,fsdev="${VM_NAME}_9p_${_9p_id}",mount_tag="${share_name}""
 			# print out 9p settings
-			echo "${share_path} shared via ${share_name} (${share_secm})" | (loginfo)
+			echo "9p mounttag: \"${share_name}\" sharing \"${share_path}\" (security: ${share_secm})" | (loginfo)
 
 			_9p_id=$(expr ${_9p_id} + 1)
 		done
@@ -285,20 +285,20 @@ _cfg_remote_access_check() {
 	if ${VM_ENABLE_SPICE}; then
 		spice_password="$(echo ${VM_REMOTE_ACCESS_SPICE}|cut -sd';' -f2)"
 		spice_ip="$(echo ${VM_REMOTE_ACCESS_SPICE}|cut -sd';' -f3)"
-		spice_port="$(echo ${VM_REMOTE_ACCESS_SPICE}|cut -sd';' -f4)"
 		[ -z "${spice_ip}" ] && spice_ip="${local_ip}"
+		spice_port="$(echo ${VM_REMOTE_ACCESS_SPICE}|cut -sd';' -f4)"
 		spice_port="$(_check_remote_access_port 580 "${spice_ip}" "${spice_port}")"
 
-		echo "remote acces via spice on ${spice_ip}:${spice_port} (pw: ${spice_password})" | (loginfo)
+		echo "Spice access on ${spice_ip}:${spice_port} (pw: \"${spice_password}\")" | (loginfo)
 	fi
 	if ${VM_ENABLE_VNC}; then
 		vnc_password="$(echo ${VM_REMOTE_ACCESS_VNC}|cut -sd';' -f2)"
 		vnc_ip="$(echo ${VM_REMOTE_ACCESS_VNC}|cut -sd';' -f3)"
-		vnc_port="$(echo ${VM_REMOTE_ACCESS_VNC}|cut -sd';' -f4)"
 		[ -z "${vnc_ip}" ] && vnc_ip="${local_ip}"
+		vnc_port="$(echo ${VM_REMOTE_ACCESS_VNC}|cut -sd';' -f4)"
 		vnc_port="$(expr $(_check_remote_access_port 590 "${vnc_ip}" "${vnc_port}") - 5900)"
 
-		echo "remote acces via vnc on ${vnc_ip}:$(expr ${vnc_port} + 5900) (pw: ${vnc_password})" | (loginfo)
+		echo "VNC access on ${vnc_ip}:$(expr ${vnc_port} + 5900) (pw: \"${vnc_password}\")" | (loginfo)
 	fi
 
 	if ! ${VM_ENABLE_SPICE} && ! ${VM_ENABLE_VNC} && ! ${VM_ENABLE_SDL} && ${VM_ENABLE_DAEMONIZE}; then

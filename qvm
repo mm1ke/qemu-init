@@ -61,27 +61,34 @@ else
 fi
 
 usage() {
-	echo -e "$0"
+	echo -e "qvm"
 	echo
-	echo -e "start/stop/list vm"
+	echo -e "### start/stop/list vm ###"
+	echo -e "qvm -b|--boot /path/to/configfile"
+	echo -e " boot virtual machine config file"
+	echo -e "qvm -s|--stop vmname|/path/to/configfile"
+	echo -e " stop virtual machine"
+	echo -e "qvm -r|--reboot vmname|/path/to/configfile"
+	echo -e " restart virtual machine (via qemu guest agent)"
+	echo -e "qvm -x|--reset vmname|/path/to/configfile"
+	echo -e " reset virtual machine"
+	echo -e "qvm -f|--freeze vmname|/path/to/configfile"
+	echo -e " freeze|unfreeze guest filesystem (via qemu guest agent)"
+	echo -e "qvm -l|--list[vmname]"
+	echo -e " list all virtual machines|show details of [vmname]"
 	echo
-	echo -e "$0 -b|--boot /path/to/config.file\t\tboot vm config file"
-	echo -e "$0 -s|--stop /path/to/config.file|vmname\tstop vmname"
-	echo -e "$0 -r|--reboot /path/to/config.file|vmname\trestart vmname (via qemu guest agent)"
-	echo -e "$0 -x|--reset /path/to/config.file|vmname\treset vmname"
-	echo -e "$0 -f|--freeze /path/to/config.file|vmname\tfreeze/unfreeze guest filesystem (via qemu guest agent)"
-	echo -e "$0 -l|--list [vmname]\t\t\tlist all vms | list details fo [vmname]"
-	echo
-	echo -e "modify vm"
-	echo -e "$0 -u|--update vmname,[mem,size_in_mb]"
+	echo -e "### modify vm ###"
+	echo -e "qvm -u|--update vmname,[mem|memory],size_in_mb"
+	echo -e " change the memory of [vmname] via ballooing"
 	#TODO
 	# send command to guest-agent / qemu socket
 	# adding hw on the fly
 	echo
-	echo -e "other settings"
-	echo
-	echo -e "$0 -a|--add bridge-dev,tap-name"
-	echo -e "$0 -d|--delete bridge-dev,tap-name"
+	echo -e "### other settings ###"
+	echo -e "qvm -a|--add bridge-dev,tap-name"
+	echo -e " create a new tap device and link it to [bridge-dev]"
+	echo -e "qvm -d|--delete bridge-dev,tap-name"
+	echo -e " remove a tap device linked to [bridge-dev]"
 	#TODO
 	# enter qemu vm console (socket)
 }
