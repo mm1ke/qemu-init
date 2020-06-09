@@ -218,17 +218,19 @@ vm_list() {
 			local _vm_spice_settings="$(echo "info spice" \
 				| ${NC} -U -q1 ${PID_DIR}/${vmname}.sock 2>&1 \
 				| grep --only-matching --perl-regex "(?<=address\:).*[0-9]" \
-				| head -n1)"
+				| head -n1|tr -d '[:space:]')"
 			local	_vm_vnc_settings="$(echo "info vnc" \
 				| ${NC} -U -q1 ${PID_DIR}/${vmname}.sock 2>&1 \
-				| grep --only-matching --perl-regex "(?<=address\:).*[0-9]" \
-				| head -n1)"
+				# don't include the 4 in the regex so the result won't include: (ipv4)
+				| grep --only-matching --perl-regex "(?<=Server\:).*[1,2,3,5,6,7,8,9,0]" \
+				| head -n1|tr -d '[:space:]')"
 			echo "Details of ${vmname}:"
 			echo -e " VM started at:\t\t${_vm_starttime}"
 			echo -e " Uptime:\t\t${_vm_uptime}"
 			echo -e " PID:\t\t\t${_vm_pid}"
-			echo " Spice: ${_vm_spice_settings}"
-			echo " VNC: ${_vm_vnc_settings}"
+			echo -e " Spice:\t\t\t${_vm_spice_settings}"
+			echo -e " VNC:\t\t\t${_vm_vnc_settings}"
+			# TODO: info about networks -> echo "info network" | nc -U -q1 *.sock
 		fi
 	fi
 }
