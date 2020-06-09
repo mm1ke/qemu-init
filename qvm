@@ -219,9 +219,9 @@ vm_list() {
 				| ${NC} -U -q1 ${PID_DIR}/${vmname}.sock 2>&1 \
 				| grep --only-matching --perl-regex "(?<=address\:).*[0-9]" \
 				| head -n1|tr -d '[:space:]')"
+			# don't include the 4 in the regex so the result won't include: (ipv4)
 			local	_vm_vnc_settings="$(echo "info vnc" \
 				| ${NC} -U -q1 ${PID_DIR}/${vmname}.sock 2>&1 \
-				# don't include the 4 in the regex so the result won't include: (ipv4)
 				| grep --only-matching --perl-regex "(?<=Server\:).*[1,2,3,5,6,7,8,9,0]" \
 				| head -n1|tr -d '[:space:]')"
 			echo "Details of ${vmname}:"
