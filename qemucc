@@ -58,14 +58,18 @@ read -r -d '' VM_NETSTART <<- EOM
 EOM
 
 usage() {
-	echo -e "$0"
+	echo -e "qemucc"
 	echo
 	echo -e "Check a qemu-init config file for it's correctness"
 	echo
-	echo -e "$0 -c|--check /path/to/config.file\t\tcheck config file and print out the qemu runconfig"
-	echo -e "$0 --checkandcreate /path/to/config.file\t\tlike -c|--check but actually create tap devices if needed (root required)"
-	echo -e "$0 -s|--spice /path/to/config.file\t\tprint out spice password if set"
-	echo -e "$0 -v|--vnc /path/to/config.file\t\t\tprint out vnc password if set"
+	echo -e "qemucc -c|--check /path/to/config.file"
+	echo -e " check config file and print out the qemu runconfig"
+	echo -e "qemucc --checkandcreate /path/to/config.file"
+	echo -e " like -c/--check but disabled dryrun. (abort on error and create tap devices)"
+	echo -e "qemucc -s|--spice /path/to/config.file"
+	echo -e " print out spice password if set"
+	echo -e "qemucc -v|--vnc /path/to/config.file"
+	echo -e " print out vnc password if set"
 }
 
 _dry_run_check(){
