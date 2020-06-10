@@ -48,6 +48,7 @@ fi
 DEFAULT_MSG="Please check your config (${2})"
 
 SET_USER="true"
+DRYRUN="true"
 
 loginfo() { while IFS='' read -r line; do >&2 echo -e "${YELLOW} * ${NC}${line}"; done }
 logerr() { while IFS='' read -r line; do >&2 echo -e "${LIGHTRED} * ${NC}${line}"; done }
@@ -65,6 +66,15 @@ usage() {
 	echo -e "$0 --checkandcreate /path/to/config.file\t\tlike -c|--check but actually create tap devices if needed (root required)"
 	echo -e "$0 -s|--spice /path/to/config.file\t\tprint out spice password if set"
 	echo -e "$0 -v|--vnc /path/to/config.file\t\t\tprint out vnc password if set"
+}
+
+_dry_run_check(){
+	if ${DRYRUN}; then
+		echo "|- Ignoring error while only checking" | (loginfo)
+		return 0
+	else
+		return 1
+	fi
 }
 
 _check_remote_access_port(){
@@ -131,21 +141,21 @@ _cfg_network_check(){
 				if [ -n "${net_brd}" ]; then
 					if ! [ -d /sys/class/net/${net_brd}/bridge/ ]; then
 						echo "${net_brd} is not a bridge device. ${DEFAULT_MSG}" | (logerr)
-						return 1
+						_dry_run_check || return 1
 					fi
 				else
 					echo "No bridge device setup! ${DEFAULT_MSG}" | (logerr)
-					return 1
+					_dry_run_check || return 1
 				fi
 				# check for max_vms
 				if [ ${_net_id} -ge ${MAX_QTAP} ]; then
 					echo "Maximum number of network connections reached. Please increase the MAX_QTAP variable." | (logerr)
-					return 1
+					_dry_run_check || return 1
 				fi
 				if [ -n "${net_qtp}" ]; then
 					if ! [ -f /sys/class/net/${net_qtp}/tun_flags ]; then
 						echo "\"${net_qtp}\" is not a tun/tap device. ${DEFAULT_MSG}" | (logerr)
-						return 1
+						_dry_run_check || return 1
 					else
 						if ${_random_mac}; then
 							echo "MAC address \"${net_mac}\" for ${net_qtp} is random and will be lost after shutdown" | (loginfo)
@@ -183,7 +193,7 @@ _cfg_network_check(){
 			user)
 				if (${_net_user_set}); then
 					echo "Network typ user can only be used once. ${DEFAULT_MSG}" | (logerr)
-					return 1
+					_dry_run_check || return 1
 				fi
 				_net_user_set=true
 				if ${_random_mac}; then
@@ -217,7 +227,7 @@ _cfg_9p_check() {
 
 			if [ -z ${share_name} ] || ! [ -e ${share_path} ]; then
 				echo "No name given or Path does not exist. ${DEFAULT_MSG}" | (logerr)
-				return 1
+				_dry_run_check || return 1
 			fi
 			# default security model none
 			share_secm=${share_secm:-none}
@@ -247,12 +257,12 @@ _cfg_harddisk_check() {
 
 			if [ -z "${hd_path}" ] || ! [ -e "${hd_path}" ]; then
 				echo "${hd_path} not found. ${DEFAULT_MSG}" | (logerr)
-				return 1
+				_dry_run_check || return 1
 			fi
 			# check if image is already running
 			if $(${LSOF} -c qemu 2>/dev/null | grep -q ${hd_path} >/dev/null); then
 				echo "This vm-image is already running! ${DEFAULT_MSG}" | (logerr)
-				return 1
+				_dry_run_check || return 1
 			fi
 			# set default settings for hd if nothing is set
 			hd_cache=${hd_cache:-writethrough}
@@ -303,7 +313,7 @@ _cfg_remote_access_check() {
 
 	if ! ${VM_ENABLE_SPICE} && ! ${VM_ENABLE_VNC} && ! ${VM_ENABLE_SDL} && ${VM_ENABLE_DAEMONIZE}; then
 		echo "No remote access or sdl enabled. At least one of them needs to be enabled!" | (logerr)
-		return 1
+		_dry_run_check || return 1
 	fi
 
 }
@@ -333,7 +343,7 @@ _cfgcheck(){
 		VM_QEMU_BIN="/usr/bin/qemu-system-${VM_ARCH}"
 	else
 		echo "No support of ${VM_ARCH} in your qemu installation" | (logerr)
-		return 1
+		_dry_run_check || return 1
 	fi
 
 	# if script runs as root respect VM_USER setting from config file
@@ -405,7 +415,7 @@ _cfgcheck(){
 	if [ -n "${VM_CDROM}" ]; then
 		if ! [ -e "${VM_CDROM}" ]; then
 			echo "Image dosn't exist. ${DEFAULT_MSG}" | (logerr)
-			return 1
+			_dry_run_check || return 1
 		fi
 	fi
 
@@ -540,31 +550,33 @@ while true; do
 						echo "couldn't read ${2}. Permission denied"
 						exit 1
 					fi
+					case "$1" in
+						--checkandcreate)
+							DRYRUN=false
+							;;
+					esac
 					if _cfgcheck; then
 						_myconfig
 						# if cfgcheck passed and myconfig is generated start to create the
 						# tap interface on the system
-						case "$1" in
-							--checkandcreate)
-								if [ -n "${VM_NETSTART}" ]; then
-									if [ -e "${PID_DIR}/${VM_NAME}.net" ]; then
-										echo "${PID_DIR}/${VM_NAME}.net already exists. Aborting tap interface creation!" | (logerr)
-										exit 1
-									else
-										su -l root -c "${VM_NETSTART}"
-									fi
+						if ${DRYRUN}; then
+							if [ -n "${VM_NETSTART}" ]; then
+								echo | (loginfo)
+								echo "following tap interface(s) would be created: (only as root)" | (loginfo)
+								echo "------" | (loginfo)
+								echo "${VM_NETSTART}" | (loginfo)
+								echo "------" | (loginfo)
+							fi
+						else
+							if [ -n "${VM_NETSTART}" ]; then
+								if [ -e "${PID_DIR}/${VM_NAME}.net" ]; then
+									echo "${PID_DIR}/${VM_NAME}.net already exists. Aborting tap interface creation!" | (logerr)
+									exit 1
+								else
+									su -l root -c "${VM_NETSTART}"
 								fi
-								;;
-							*)
-								if [ -n "${VM_NETSTART}" ]; then
-									echo | (loginfo)
-									echo "following tap interface(s) would be created: (only as root)" | (loginfo)
-									echo "------" | (loginfo)
-									echo "${VM_NETSTART}" | (loginfo)
-									echo "------" | (loginfo)
-								fi
-								;;
-						esac
+							fi
+						fi
 						echo ${myconfig}
 					else
 						exit 1
