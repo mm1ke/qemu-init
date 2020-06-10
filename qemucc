@@ -327,6 +327,9 @@ _cfgcheck(){
 	VM_ENABLE_SDL=$(echo ${VM_ENABLE_SDL:-false})
 	VM_ENABLE_GL=$(echo ${VM_ENABLE_GL:-false})
 
+	VM_DEV="${VM_DEVICES} ${VM_DEVICES1} ${VM_DEVICES2} ${VM_DEVICES3} ${VM_DEVICES4} \
+		${VM_DEVICES5} ${VM_DEVICES6} ${VM_DEVICES7} ${VM_DEVICES8} ${VM_DEVICES9}"
+
 	if (${VM_ENABLE_SNAPSHOTMODE:-false}); then
 		echo "SNAPSHOT MODE! Changes in the guest system won't be saved!" | (loginfo)
 	fi
@@ -505,7 +508,7 @@ _myconfig(){
 	# audio settings
 	[ -z "${VM_AUDIO}" ] || myconfig="${myconfig} -soundhw ${VM_AUDIO}"
 	# other devices
-	[ -z "${VM_DEVICES}" ] || myconfig="${myconfig} ${VM_DEVICES}"
+	[ -z "${VM_DEV}" ] || myconfig="${myconfig} ${VM_DEV}"
 	# cdrom settings
 	[ -z "${VM_CDROM}" ] || myconfig="${myconfig} -cdrom ${VM_CDROM}"
 
