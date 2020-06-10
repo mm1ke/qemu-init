@@ -328,7 +328,6 @@ vm_reset(){
 
 	echo "Reseting ${vmname}"
 	echo "system_reset" | ${NC} -U -q1 ${PID_DIR}/${vmname}.sock > /dev/null 2>&1
-	echo "asd"
 }
 
 vm_freeze_thaw(){
