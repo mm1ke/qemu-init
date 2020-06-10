@@ -187,7 +187,7 @@ vm_list() {
 	if [ -z "${vmname}" ]; then
 		echo "Overview of all VMs"
 		echo " System VMs:"
-		for i in $(find /etc/conf.d/ -type f -name kvm.*); do
+		for i in $(find /etc/conf.d/ -type f -name "kvm.*"); do
 			if [ -r /run/kvm ]; then
 				if [ -e /run/kvm/${i##*.}.pid ]; then
 					echo "  U ${i##*.} (PID: $(cat /run/kvm/${i##*.}.pid))"
