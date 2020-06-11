@@ -113,8 +113,8 @@ _check_remote_access_port(){
 
 _cfg_network_check(){
 	# network checks/default settings
-	local _vm_interfaces="${VM_NETWORK} ${VM_NETWORK1} ${VM_NETWORK2} ${VM_NETWORK3} ${VM_NETWORK4} \
-		${VM_NETWORK5} ${VM_NETWORK6} ${VM_NETWORK7} ${VM_NETWORK8} ${VM_NETWORK9}"
+	local _vm_interfaces="${VM_NETWORK} ${VM_NETWORK0} ${VM_NETWORK1} ${VM_NETWORK2} ${VM_NETWORK3} \
+		${VM_NETWORK4} ${VM_NETWORK5} ${VM_NETWORK6} ${VM_NETWORK7} ${VM_NETWORK8} ${VM_NETWORK9}"
 	local _net_user_set=false
 	local _net_tap_set=false
 	local _net_id=0
@@ -229,8 +229,8 @@ _cfg_network_check(){
 
 _cfg_9p_check() {
 	# 9P directory checks
-	local _vm_9pshare="${VM_9P_SHARE} ${VM_9P_SHARE1} ${VM_9P_SHARE2} ${VM_9P_SHARE3} ${VM_9P_SHARE4} \
-		${VM_9P_SHARE5} ${VM_9P_SHARE6} ${VM_9P_SHARE7} ${VM_9P_SHARE8} ${VM_9P_SHARE9}"
+	local _vm_9pshare="${VM_9P_SHARE} ${VM_9P_SHARE0} ${VM_9P_SHARE1} ${VM_9P_SHARE2} ${VM_9P_SHARE3} \
+		${VM_9P_SHARE4} ${VM_9P_SHARE5} ${VM_9P_SHARE6} ${VM_9P_SHARE7} ${VM_9P_SHARE8} ${VM_9P_SHARE9}"
 	local _9p_id=0
 
 	if [ -n "${_vm_9pshare}" ]; then
@@ -259,8 +259,8 @@ _cfg_9p_check() {
 
 _cfg_harddisk_check() {
 	# image checks/default settings
-	local _vm_harddisk="${VM_HARDDISK} ${VM_HARDDISK1} ${VM_HARDDISK2} ${VM_HARDDISK3} ${VM_HARDDISK4} \
-		${VM_HARDDISK5} ${VM_HARDDISK6} ${VM_HARDDISK7} ${VM_HARDDISK8} ${VM_HARDDISK9}"
+	local _vm_harddisk="${VM_HARDDISK} ${VM_HARDDISK0} ${VM_HARDDISK1} ${VM_HARDDISK2} ${VM_HARDDISK3} \
+		${VM_HARDDISK4} ${VM_HARDDISK5} ${VM_HARDDISK6} ${VM_HARDDISK7} ${VM_HARDDISK8} ${VM_HARDDISK9}"
 
 	if [ -n "${_vm_harddisk}" ]; then
 		for single_hd in ${_vm_harddisk}; do
@@ -337,7 +337,7 @@ _cfgcheck(){
 	VM_ENABLE_SDL=$(echo ${VM_ENABLE_SDL:-false})
 	VM_ENABLE_GL=$(echo ${VM_ENABLE_GL:-false})
 
-	VM_DEV="${VM_DEVICES} ${VM_DEVICES1} ${VM_DEVICES2} ${VM_DEVICES3} ${VM_DEVICES4} \
+	VM_DEV="${VM_DEVICES} ${VM_DEVICES0} ${VM_DEVICES1} ${VM_DEVICES2} ${VM_DEVICES3} ${VM_DEVICES4} \
 		${VM_DEVICES5} ${VM_DEVICES6} ${VM_DEVICES7} ${VM_DEVICES8} ${VM_DEVICES9}"
 
 	if (${VM_ENABLE_SNAPSHOTMODE:-false}); then
