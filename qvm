@@ -31,7 +31,7 @@ IP="/bin/ip"									# sys-apps/iproute2
 NC="/usr/bin/nc"							# net-analyzer/openbsd-netcat
 QGA="/usr/bin/qemu-ga-client"	# app-emulation/qemu[pyhton]
 LSOF="/usr/bin/lsof"					# sys-process/lsof
-QEMUCC="/home/ai/coding/qemucc"
+QEMUCC="/usr/bin/qemucc"
 
 # check PID_DIR
 PID_DIR="/run/kvm"
