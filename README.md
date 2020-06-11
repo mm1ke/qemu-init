@@ -1,11 +1,22 @@
-qemu-init
-=========
+# qemu-init
 
-Qemu init-script for Gentoo Linux
+qemu-init contains scripts for starting, stoping and manipulating qemu virtual machines. It includes 3 scripts and one example configuration file for virtual machines.
+### kvm.init
+kvm.init is a openrc init script usually used in gentoo. This can be used to create system services to start virtual machines via openrc.
+### qvm
+qvm is the qemu vm manager for stoping, starting, editing or simply listing virtual machines. It can be run as root and non-root users to play around with virtual machines.
+### qemucc
+qemucc is the qemu configuration check script. It's checks a given configuration files for errors and prints out the qemu start parameters for this particular configuration file. Boteh **kvm.init** and **qvm** using qemucc in order to start virtual machines.
+### default.config
+default.config shows an example configuration used for **kvm.init** and **qvm**. It also includes comments and sane default in order to quickly setup any virtual machine.
 
-http://michaelmk.blogspot.de/
+## Installation
+In order to use these script simply copy **qvm** and **qemucc** into `/usr/bin/`. If you're using the openrc init system and want to start vms as a service simply put **kvm.init** into `/etc/init.d/` and symlink vm configurations to it. configuration files need to be in `/etc/conf.d`.
+For example:
+`cp kvm.init /etc/init.d/`
+`cp default.config /etc/conf.d/kvm.windows`
+`cd /etc/init.d/`
+`ln -s kvm.init kvm.windows`
 
-TODO:
-	* shutdown via qemu-ga-client (needs app-emulation/qemu[python])
-	* frezze/unfreeze (needs qemu-ga-client)
-	* reboot via qemu-ga-client
+## License
+All scripts are free software. You can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; either version 2 of the License, or (at your option) any later version.
