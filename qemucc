@@ -120,7 +120,7 @@ _cfg_network_check(){
 	local _net_id=0
 	local _random_mac=false
 	local _vhost_set=""
-	if ${VM_ENABLE_VHOST}; then
+	if ${VM_ENABLE_VHOST:-false}; then
 		_vhost_set=",vhost=on"
 	fi
 
