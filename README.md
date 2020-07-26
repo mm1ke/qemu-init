@@ -12,11 +12,11 @@ default.config shows an example configuration used for **kvm.init** and **qvm**.
 
 ## Installation
 In order to use these script simply copy **qvm** and **qemucc** into `/usr/bin/`. If you're using the openrc init system and want to start vms as a service simply put **kvm.init** into `/etc/init.d/` and symlink vm configurations to it. configuration files need to be in `/etc/conf.d`.
-For example:
-`cp kvm.init /etc/init.d/`
-`cp default.config /etc/conf.d/kvm.windows`
-`cd /etc/init.d/`
-`ln -s kvm.init kvm.windows`
+For example:  
+`cp kvm.init /etc/init.d/`  
+`cp default.config /etc/conf.d/kvm.windows`  
+`cd /etc/init.d/`  
+`ln -s kvm.init kvm.windows`  
 
 ## License
 All scripts are free software. You can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; either version 2 of the License, or (at your option) any later version.

@@ -329,7 +329,53 @@ _cfg_remote_access_check() {
 		echo "No remote access or sdl enabled. At least one of them needs to be enabled!" | (logerr)
 		_dry_run_check || return 1
 	fi
+}
 
+_cfg_audio_check() {
+	local _vm_audio="${VM_AUDIO} ${VM_AUDIO0} ${VM_AUDIO1} ${VM_AUDIO2} ${VM_AUDIO3} \
+		${VM_AUDIO4} ${VM_AUDIO5} ${VM_AUDIO6} ${VM_AUDIO7} ${VM_AUDIO8} ${VM_AUDIO9}"
+	local _audio_id=0
+
+	if [ -n "${_vm_audio}" ]; then
+		for single_audio in ${_vm_audio}; do
+			local audio_dev="$(echo ${single_audio}|cut -d';' -f1)"
+			local audio_hw="$(echo ${single_audio}|cut -sd';' -f2)"
+
+			if [ -z "${audio_dev}" ]; then
+				audio_dev="-audiodev sdl,id=${VM_NAME}_s_${_audio_id},driver=sdl"
+			else
+				case ${audio_dev} in
+					sdl|alsa|oss|none)
+						audio_dev="-audiodev ${audio_dev},id=${VM_NAME}_s_${_audio_id},driver=${audio_dev}"
+						;;
+					*)
+						# not supported
+						echo "Audiodev \"${audio_dev}\" is not supported. ${DEFAULT_MSG}" | (logerr)
+						_dry_run_check || return 1
+						;;
+				esac
+			fi
+			if [ -z "${audio_hw}" ]; then
+				audio_hw="-device ich9-intel-hda -device hda-output,audiodev=${VM_NAME}_s_${_audio_id}"
+			else
+				case "${audio_hw}" in
+					ich9-intel-hda)
+						audio_hw="-device ${audio_hw} -device hda-output,audiodev=${VM_NAME}_s_${_audio_id}"
+						;;
+					usb-audio)
+						audio_hw="-device ${audio_hw},audiodev=${VM_NAME}_s_${_audio_id},multi=on"
+						;;
+					*)
+						audio_hw="-device ${audio_hw},audiodev=${VM_NAME}_s_${_audio_id}"
+						;;
+				esac
+			fi
+
+			VM_SOUND="${VM_SOUND} ${audio_dev} ${audio_hw}"
+
+			_audio_id=$(expr ${_audio_id} + 1)
+		done
+	fi
 }
 
 _cfgcheck(){
@@ -440,6 +486,7 @@ _cfgcheck(){
 	_cfg_network_check || return 1
 	_cfg_9p_check || return 1
 	_cfg_remote_access_check || return 1
+	_cfg_audio_check || return 1
 }
 
 
@@ -516,7 +563,7 @@ _myconfig(){
 	# display settings
 	[ -z "${VM_DISPLAY}" ] || myconfig="${myconfig} -vga ${VM_DISPLAY}"
 	# audio settings
-	[ -z "${VM_AUDIO}" ] || myconfig="${myconfig} -soundhw ${VM_AUDIO}"
+	[ -z "${VM_SOUND}" ] || myconfig="${myconfig} ${VM_SOUND}"
 	# other devices
 	[ -z "${VM_DEV}" ] || myconfig="${myconfig} ${VM_DEV}"
 	# cdrom settings
