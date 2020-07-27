@@ -79,25 +79,28 @@ usage() {
 	echo
 	echo -e "### modify vm ###"
 	echo -e "qvm -u|--update vmname,[mem|memory],size_in_mb"
-	echo -e " change the memory of [vmname] via ballooing"
-	#TODO
-	# send command to guest-agent / qemu socket
-	# adding hw on the fly
+	echo -e "                vmname,[key|sendkey],keys"
+	echo -e "                vmname,[vnc|spice],password"
+	echo -e "  -mem|memory: change the memory of [vmname] via ballooing"
+	echo -e "  -key|sendkey: send key combination to [vmname] (like ctrl-alt-f1)"
+	echo -e "  -vnc|spice: change vnc or spice password of [vmname]"
+	echo -e "qvm -c|--connect vmname"
+	echo -e " connect to the unix socket of [vmname]"
 	echo
 	echo -e "### other settings ###"
 	echo -e "qvm -a|--add bridge-dev,tap-name"
 	echo -e " create a new tap device and link it to [bridge-dev]"
 	echo -e "qvm -d|--delete bridge-dev,tap-name"
 	echo -e " remove a tap device linked to [bridge-dev]"
-	#TODO
-	# enter qemu vm console (socket)
 }
 
 _check_running_vm() {
 	local _vm=${1}
 	# now that we defined the vm_name check if it's running at the moment. If
-	# not print a error and return 1. Depending on user context pid can be at
-	# different places, thus we only see vms of the user
+	# not print a error and return 1.
+	# if the executing user is not root we only see vm's of the user since the PID
+	# files for system vm's are at different place and usually not readable for
+	# users
 	if ! [ -f "${PID_DIR}/${_vm}.pid" ]; then
 		echo "VM: \"${_vm}\" not running!"
 		exit 1
@@ -143,14 +146,13 @@ _check_qga(){
 	fi
 }
 
-_vm_memory(){
-	local _vm=$1
-	local _mem=$2
+_vm_edit(){
+	local _cmd=$1
+	local _vm=$2
+	local _value=$3
 
-	echo "Changing Memory to ${_mem}MB for ${_vm}"
-	echo "balloon ${_mem}" | ${NC} -U -q1 ${PID_DIR}/${_vm}.sock > /dev/null 2>&1
+	echo "${_cmd} ${_value}" | ${NC} -U -q1 ${PID_DIR}/${_vm}.sock > /dev/null 2>&1
 }
-
 
 _stop_tap_devices() {
 	local vmname="${1}"
@@ -252,7 +254,20 @@ vm_update() {
 
 	case ${_setting} in
 		mem|memory)
-			_vm_memory ${vmname} ${_value}
+			echo "Changing Memory to ${_mem}MB for ${_vm}"
+			_vm_edit balloon ${vmname} ${_value}
+			;;
+		key|sendkey)
+			echo "Sending key combination: ${_value}"
+			_vm_edit sendkey ${vmname} ${_value}
+			;;
+		vnc)
+			echo "Changing VNC password to ${_value}"
+			_vm_edit "set_password vnc" ${vmname} ${_value}
+			;;
+		spice)
+			echo "Changing SPICE password to ${_value}"
+			_vm_edit "set_password spice" ${vmname} ${_value}
 			;;
 	esac
 }
@@ -308,7 +323,6 @@ delete_network() {
 			EOM
 			su -l root -c "${DELETE_TAP}"
 		fi
-	#elif
 	else
 		echo "Couldn't remove ${_name}. Unknown device"
 	fi
@@ -330,6 +344,16 @@ vm_reset(){
 	echo "system_reset" | ${NC} -U -q1 ${PID_DIR}/${vmname}.sock > /dev/null 2>&1
 }
 
+vm_connect(){
+	local vmname=$(_define_vm ${1})
+	_check_running_vm ${vmname} || exit 1
+
+	echo "Connecting to socket ${PID_DIR}/${vmname}.sock"
+	echo "Use CTRL+D to detach from the socket"
+	echo
+	${NC} -U -q1 ${PID_DIR}/${vmname}.sock
+}
+
 vm_freeze_thaw(){
 	local vmname=$(_define_vm ${1})
 	_check_running_vm ${vmname} || exit 1
@@ -347,7 +371,6 @@ vm_freeze_thaw(){
 		fi
 	fi
 }
-
 
 vm_start(){
 	local vm_config_file=${1}
@@ -466,12 +489,10 @@ vm_stop(){
 	fi
 }
 
-
-
 # start of the script
 if [ $# -lt 1 ]; then usage; exit; fi
 
-OPTS=$(getopt -o b:s:r:x:f:a:d:l::u: --long boot:,stop:,reboot:,reset:,freeze:,add:,delete:,list::,update: -n 'qvm' -- "$@")
+OPTS=$(getopt -o b:s:r:x:f:a:d:l::u:c: --long boot:,stop:,reboot:,reset:,freeze:,add:,delete:,list::,update:,connect: -n 'qvm' -- "$@")
 eval set -- "$OPTS"
 
 while true; do
@@ -520,6 +541,11 @@ while true; do
 			case "$2" in
 				"") vm_list ; exit ; shift 2 ;;
 				*) vm_list $2 ; exit ; shift 2 ;;
+			esac ;;
+		-c|--connect)
+			case "$2" in
+				"") shift 2 ;;
+				*) vm_connect "$2" ; exit ; shift 2 ;;
 			esac ;;
 		--) shift ; break ;;
 		*) echo "Internal error!"; exit 1 ;;
