@@ -62,36 +62,28 @@ fi
 
 usage() {
 	echo -e "qvm"
+	echo -e "start/stop and manipulating qemu vms"
 	echo
-	echo -e "### start/stop/list vm ###"
-	echo -e "qvm -b|--boot /path/to/configfile"
-	echo -e " boot virtual machine config file"
-	echo -e "qvm -s|--stop vmname|/path/to/configfile"
-	echo -e " stop virtual machine"
-	echo -e "qvm -r|--reboot vmname|/path/to/configfile"
-	echo -e " restart virtual machine (via qemu guest agent)"
-	echo -e "qvm -x|--reset vmname|/path/to/configfile"
-	echo -e " reset virtual machine"
-	echo -e "qvm -f|--freeze vmname|/path/to/configfile"
-	echo -e " freeze|unfreeze guest filesystem (via qemu guest agent)"
-	echo -e "qvm -l|--list[vmname]"
-	echo -e " list all virtual machines|show details of [vmname]"
+	echo -e "start/stopping/listing:"
+	echo -e "qvm -b [-s|-r|-x|-f|-l] vmname|/path/to/configfile"
+	echo -e "qvm -b|--boot\t\t\tboot virtual machine config file"
+	echo -e "qvm -s|--stop\t\t\tstop virtual machine"
+	echo -e "qvm -r|--reboot\t\t\trestart virtual machine (via qemu guest agent)"
+	echo -e "qvm -x|--reset\t\t\treset virtual machine"
+	echo -e "qvm -f|--freeze\t\t\tfreeze|unfreeze guest filesystem (via qemu guest agent)"
+	echo -e "qvm -l|--list\t\t\tlist all virtual machines|show details of [vmname]"
 	echo
-	echo -e "### modify vm ###"
-	echo -e "qvm -u|--update vmname,[mem|memory],size_in_mb"
-	echo -e "                vmname,[key|sendkey],keys"
-	echo -e "                vmname,[vnc|spice],password"
-	echo -e "  -mem|memory: change the memory of [vmname] via ballooing"
-	echo -e "  -key|sendkey: send key combination to [vmname] (like ctrl-alt-f1)"
-	echo -e "  -vnc|spice: change vnc or spice password of [vmname]"
-	echo -e "qvm -c|--connect vmname"
-	echo -e " connect to the unix socket of [vmname]"
+	echo -e "modify:"
+	echo -e "qvm -c [-u] vmname[,mem|key|vnc],value"
+	echo -e "-u vmname,mem,4096\t\tchange the memory of [vmname] via ballooing"
+	echo -e "-u vmname,key,ctrl-alt-f1\tsend key combination to [vmname] (like ctrl-alt-f1)"
+	echo -e "-u vmname,vnc|spice,P4ssw0rd\tchange vnc or spice password of [vmname]"
+	echo -e "qvm -c|--connect vmname\t\tconnect to the unix socket of [vmname]"
 	echo
-	echo -e "### other settings ###"
-	echo -e "qvm -a|--add bridge-dev,tap-name"
-	echo -e " create a new tap device and link it to [bridge-dev]"
-	echo -e "qvm -d|--delete bridge-dev,tap-name"
-	echo -e " remove a tap device linked to [bridge-dev]"
+	echo -e "host network:"
+	echo -e "qvm -a [-b] bridge-dev(br0),tap-name(q1tap1)"
+	echo -e "qvm -a|--add\t\t\tcreate a new tap device and link it to [bridge-dev]"
+	echo -e "qvm -d|--delete\t\t\tremove a tap device linked to [bridge-dev]"
 }
 
 _check_running_vm() {
@@ -379,11 +371,11 @@ vm_start(){
 	fi
 
 	if ! [ -f ${vm_config_file} ]; then
-		if [ -f "${CFG_DIR}${vm_config_file}" ]; then
+		if [ -f "/${CFG_DIR}/${vm_config_file}" ]; then
 			vmname="${vm_config_file}"
-			vm_config_file="${CFG_DIR}${vm_config_file}"
+			vm_config_file="/${CFG_DIR}/${vm_config_file}"
 		else
-			echo "config file \"${CFG_DIR}${vm_config_file}\" not found."
+			echo "config file \"/${CFG_DIR}/${vm_config_file}\" not found."
 			exit 1
 		fi
 	else
