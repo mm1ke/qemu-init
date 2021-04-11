@@ -81,9 +81,9 @@ usage() {
 	echo -e "qvm -c|--connect vmname\t\tconnect to the unix socket of [vmname]"
 	echo
 	echo -e "host network:"
-	echo -e "qvm -a [-b] bridge-dev(br0),tap-name(q1tap1)"
+	echo -e "qvm -a [-d] [bridge-dev(br0),]tap-name(q1tap1)"
 	echo -e "qvm -a|--add\t\t\tcreate a new tap device and link it to [bridge-dev]"
-	echo -e "qvm -d|--delete\t\t\tremove a tap device linked to [bridge-dev]"
+	echo -e "qvm -d|--delete\t\t\tremove a tap device"
 }
 
 _check_running_vm() {
@@ -154,7 +154,7 @@ _stop_tap_devices() {
 	if [ -e "${PID_DIR}/${vmname}.net" ]; then
 		for qtap_id in $(cat ${PID_DIR}/${vmname}.net); do
 			# check if qtap_id is a tap device
-			delete_network bridge,${qtap_id}
+			delete_network ${qtap_id}
 			if [ -d /sys/class/net/${qtap_id}/ ]; then
 				ready_to_delete=false
 			fi
@@ -290,10 +290,9 @@ create_network() {
 }
 
 delete_network() {
-	local _type="${1%%,*}"
-	local _name="${1##*,}"
-	if [ -z "${_type}" ] || [ -z "${_name}" ]; then
-		echo "missing var: please make sure you passed type,name. see: qvm -h"
+	local _name="${1}"
+	if [ -z "${_name}" ]; then
+		echo "missing var: please make sure you passed the tap name. see: qvm -h"
 		exit 1
 	fi
 
@@ -484,7 +483,7 @@ vm_stop(){
 # start of the script
 if [ $# -lt 1 ]; then usage; exit; fi
 
-OPTS=$(getopt -o b:s:r:x:f:a:d:l::u:c: --long boot:,stop:,reboot:,reset:,freeze:,add:,delete:,list::,update:,connect: -n 'qvm' -- "$@")
+OPTS=$(getopt -o b:s:r:x:f:a:d:l::u:c:h --long boot:,stop:,reboot:,reset:,freeze:,add:,delete:,list::,update:,connect:,help -n 'qvm' -- "$@")
 eval set -- "$OPTS"
 
 while true; do
@@ -539,6 +538,7 @@ while true; do
 				"") shift 2 ;;
 				*) vm_connect "$2" ; exit ; shift 2 ;;
 			esac ;;
+		-h|--help) usage; shift ;;
 		--) shift ; break ;;
 		*) echo "Internal error!"; exit 1 ;;
 	esac
