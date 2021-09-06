@@ -366,15 +366,15 @@ vm_freeze_thaw(){
 vm_start(){
 	local vm_config_file=${1}
 	if [ $(id -u) = 0 ] && [ -z "${CFG_DIR}" ]; then
-		CFG_DIR="/etc/conf.d/"
+		CFG_DIR="/etc/conf.d/kvm."
 	fi
 
 	if ! [ -f ${vm_config_file} ]; then
-		if [ -f "/${CFG_DIR}/kvm.${vm_config_file}" ]; then
+		if [ -f "${CFG_DIR}${vm_config_file}" ]; then
 			vmname="${vm_config_file}"
-			vm_config_file="/${CFG_DIR}/kvm.${vm_config_file}"
+			vm_config_file="${CFG_DIR}${vm_config_file}"
 		else
-			echo "config file \"/${CFG_DIR}/kvm.${vm_config_file}\" not found."
+			echo "config file \"${CFG_DIR}${vm_config_file}\" not found."
 			exit 1
 		fi
 	else
