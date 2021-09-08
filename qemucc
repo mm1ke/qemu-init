@@ -543,7 +543,7 @@ _myconfig(){
 	# remote access settings
 	if ${VM_ENABLE_SPICE}; then
 		myconfig="${myconfig} -spice port=${spice_port},addr=${spice_ip}"
-		[ -z "${spice_password}" ] && myconfig="${myconfig},disable-ticketing"
+		[ -z "${spice_password}" ] && myconfig="${myconfig},disable-ticketing=on"
 	fi
 	if ${VM_ENABLE_VNC}; then
 		myconfig="${myconfig} -vnc ${vnc_ip}:${vnc_port}"
