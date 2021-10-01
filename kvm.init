@@ -38,11 +38,9 @@ QEMUCC="/usr/bin/qemucc"
 # check PID_DIR
 PID_DIR="/run/kvm"
 [ -d ${PID_DIR} ] || mkdir ${PID_DIR}
-# export PID_DIR, because we need it in qemucc
-export PID_DIR
 
-# check if TMP_DIR exists
-[ -w ${TMP_DIR} ] || TMP_DIR="/tmp"
+# set TMP_DIR
+TMP_DIR="/tmp"
 
 VM_NAME=${RC_SVCNAME#*.}
 CONF_PATH="/etc/conf.d/kvm.${VM_NAME}"

@@ -40,8 +40,6 @@ if [ $(id -u) = 0 ]; then
 else
 	PID_DIR="/run/user/$(id -u)"
 fi
-# export PID_DIR, because we need it in qemucc
-export PID_DIR
 
 # check if the qemu guest agent is available
 QGA_AVAILABLE=false
@@ -51,7 +49,7 @@ fi
 
 # check if TMP_DIR exists
 if [ $(id -u) = 0 ]; then
-	[ -w ${TMP_DIR} ] || TMP_DIR="/tmp"
+	TMP_DIR="/tmp"
 else
 	if [ -n "${TMP_DIR}" ]; then
 		[ -w ${TMP_DIR} ] || TMP_DIR="/run/user/$(id -u)"

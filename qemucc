@@ -44,14 +44,12 @@ else
 	VM_NAME="${2##*/}"
 fi
 
-# set PID_DIR if it's empty. only needed when qemucc is called directly.
-if [ -z "${PID_DIR}" ]; then
-	if [ $(id -u) = 0 ]; then
-		PID_DIR="/run/kvm"
-		[ -d ${PID_DIR} ] || mkdir ${PID_DIR}
-	else
-		PID_DIR="/run/user/$(id -u)"
-	fi
+# check PID_DIR
+if [ $(id -u) = 0 ]; then
+	PID_DIR="/run/kvm"
+	[ -d ${PID_DIR} ] || mkdir ${PID_DIR}
+else
+	PID_DIR="/run/user/$(id -u)"
 fi
 
 # default message
