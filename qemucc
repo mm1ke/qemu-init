@@ -33,16 +33,7 @@ LSOF="/usr/bin/lsof"					# sys-process/lsof
 # internal limit of supported qtap ids
 MAX_QTAP=30
 
-NC='\e[0m'					# no color
-YELLOW='\e[1;33m'		# yellow color
-LIGHTRED='\e[1;31m' # lightred
-
-# extract VM_NAME from argument parsed
-if [ "${2}" = "/etc/conf.d/kvm.${2##*.}" ]; then
-	VM_NAME="${2##*.}"
-else
-	VM_NAME="${2##*/}"
-fi
+DRYRUN="true"
 
 # check PID_DIR
 if [ $(id -u) = 0 ]; then
@@ -55,30 +46,12 @@ fi
 # default message
 DEFAULT_MSG="Please check your config (${2})"
 
-SET_USER="true"
-DRYRUN="true"
-
+# logging settings
+NC='\e[0m'					# no color
+YELLOW='\e[1;33m'		# yellow color
+LIGHTRED='\e[1;31m' # lightred
 loginfo() { while IFS='' read -r line; do >&2 echo -e "${YELLOW} * ${NC}${line}"; done }
 logerr() { while IFS='' read -r line; do >&2 echo -e "${LIGHTRED} * ${NC}${line}"; done }
-
-# initiate empty VM_NETSTART variable
-read -r -d '' VM_NETSTART <<- EOM
-EOM
-
-usage() {
-	echo -e "qemucc"
-	echo
-	echo -e "Check a qemu-init config file for it's correctness"
-	echo
-	echo -e "qemucc -c|--check /path/to/config.file"
-	echo -e " check config file and print out the qemu runconfig"
-	echo -e "qemucc --checkandcreate /path/to/config.file"
-	echo -e " like -c/--check but disabled dryrun. (abort on error and create tap devices)"
-	echo -e "qemucc -s|--spice /path/to/config.file"
-	echo -e " print out spice password if set"
-	echo -e "qemucc -v|--vnc /path/to/config.file"
-	echo -e " print out vnc password if set"
-}
 
 _dry_run_check(){
 	if ${DRYRUN}; then
@@ -409,6 +382,7 @@ _cfgcheck(){
 
 	# if script runs as root respect VM_USER setting from config file
 	# otherwise use current running user
+	SET_USER="true"
 	if [ $(id -u) = 0 ]; then
 		if [ -n "${VM_USER}" ]; then
 			if ! $(getent passwd ${VM_USER} >/dev/null 2>&1); then
@@ -459,10 +433,10 @@ _cfgcheck(){
 
 	# arch spezific configuration
 	case ${VM_ARCH} in
-		arm)
-			# arm has only smc91c111 - see qemu-system-arm -net nic,model=?
-			VM_NET_DRV="smc91c111"
-			;;
+		#arm)
+		#	# arm has only smc91c111 - see qemu-system-arm -net nic,model=?
+		#	VM_NET_DRV="smc91c111"
+		#	;;
 		mips)
 			# mips only supports up to 256mb ram
 			if [ ${VM_MEMORY} -gt 256 ]; then
@@ -489,7 +463,6 @@ _cfgcheck(){
 
 
 _myconfig(){
-
 	# basic config
 	myconfig="${VM_QEMU_BIN} -name ${VM_NAME} \
 		-monitor unix:${PID_DIR}/${VM_NAME}.sock,server=on,wait=off \
@@ -593,12 +566,38 @@ get_vnc_pw() {
 	fi
 }
 
+usage() {
+	echo -e "qemucc"
+	echo
+	echo -e "Check a qemu-init config file for it's correctness"
+	echo
+	echo -e "qemucc -c|--check /path/to/config.file"
+	echo -e " check config file and print out the qemu runconfig"
+	echo -e "qemucc --checkandcreate /path/to/config.file"
+	echo -e " like -c/--check but disabled dryrun. (abort on error and create tap devices)"
+	echo -e "qemucc -s|--spice /path/to/config.file"
+	echo -e " print out spice password if set"
+	echo -e "qemucc -v|--vnc /path/to/config.file"
+	echo -e " print out vnc password if set"
+}
+
 if [ $# -lt 2 ]; then usage; exit; fi
+
+# extract VM_NAME from argument parsed
+if [ "${2}" = "/etc/conf.d/kvm.${2##*.}" ]; then
+	VM_NAME="${2##*.}"
+else
+	VM_NAME="${2##*/}"
+fi
 
 OPTS=$(getopt -o c:s:v: --long check:,spice:,vnc:,checkandcreate: -n 'qvm' -- "$@")
 eval set -- "$OPTS"
 
 myconfig=""
+
+# initiate empty VM_NETSTART variable
+read -r -d '' VM_NETSTART <<- EOM
+EOM
 
 while true; do
 	case "$1" in
