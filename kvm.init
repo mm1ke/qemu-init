@@ -42,7 +42,7 @@ PID_DIR="/run/kvm"
 export PID_DIR
 
 # check if TMP_DIR exists
-[ -d ${TMP_DIR} ] || TMP_DIR="/tmp"
+[ -w ${TMP_DIR} ] || TMP_DIR="/tmp"
 
 VM_NAME=${RC_SVCNAME#*.}
 CONF_PATH="/etc/conf.d/kvm.${VM_NAME}"
