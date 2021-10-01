@@ -41,12 +41,6 @@ else
 	PID_DIR="/run/user/$(id -u)"
 fi
 
-# check if the qemu guest agent is available
-QGA_AVAILABLE=false
-if $(command -v ${QGA} > /dev/null) ; then
-	QGA_AVAILABLE=true
-fi
-
 # check if TMP_DIR exists
 if [ $(id -u) = 0 ]; then
 	TMP_DIR="/tmp"
@@ -56,6 +50,12 @@ else
 	else
 		TMP_DIR="/run/user/$(id -u)"
 	fi
+fi
+
+# check if the qemu guest agent is available
+QGA_AVAILABLE=false
+if $(command -v ${QGA} > /dev/null) ; then
+	QGA_AVAILABLE=true
 fi
 
 usage() {
@@ -121,7 +121,7 @@ _define_vm() {
 
 # check if qemu guest agent where enabled for vm
 _check_qga(){
-	_vm=$1
+	local _vm=$1
 
 	if $(${QGA_AVAILABLE}); then
 		if [ -e ${PID_DIR}/${_vm}.qga.sock ]; then
