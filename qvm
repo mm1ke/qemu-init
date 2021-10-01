@@ -58,32 +58,6 @@ if $(command -v ${QGA} > /dev/null) ; then
 	QGA_AVAILABLE=true
 fi
 
-usage() {
-	echo -e "qvm"
-	echo -e "start/stop and manipulating qemu vms"
-	echo
-	echo -e "guest start/stopping"
-	echo -e "qvm -b|-s|-r|-x|-f|-l vmname|/path/to/configfile"
-	echo -e "qvm -b|--boot\t\t\tboot virtual machine config file"
-	echo -e "qvm -s|--stop\t\t\tstop virtual machine"
-	echo -e "qvm -r|--reboot\t\t\trestart virtual machine (via qemu guest agent)"
-	echo -e "qvm -x|--reset\t\t\treset virtual machine"
-	echo -e "qvm -f|--freeze\t\t\tfreeze|unfreeze guest filesystem (via qemu guest agent)"
-	echo -e "qvm -l|--list\t\t\tlist all virtual machines|show details of [vmname]"
-	echo
-	echo -e "guest modify"
-	echo -e "qvm -c|-u vmname[,mem|key|vnc],value"
-	echo -e " -u vmname,mem,4096\t\tchange the memory of [vmname] via ballooing"
-	echo -e " -u vmname,key,ctrl-alt-f1\tsend key combination to [vmname] (like ctrl-alt-f1)"
-	echo -e " -u vmname,vnc|spice,P4ssw0rd\tchange vnc or spice password of [vmname]"
-	echo -e "qvm -c|--connect vmname\t\tconnect to the unix socket of [vmname]"
-	echo
-	echo -e "host network"
-	echo -e "qvm -a|-d [bridge-dev(br0),]tap-name(q1tap1)"
-	echo -e "qvm -a|--add\t\t\tcreate a new tap device and link it to [bridge-dev]"
-	echo -e "qvm -d|--delete\t\t\tremove a tap device"
-}
-
 _check_running_vm() {
 	local _vm=${1}
 	# now that we defined the vm_name check if it's running at the moment. If
@@ -476,6 +450,32 @@ vm_stop(){
 			fi
 		done
 	fi
+}
+
+usage() {
+	echo -e "qvm"
+	echo -e "start/stop and manipulating qemu vms"
+	echo
+	echo -e "guest start/stopping"
+	echo -e "qvm -b|-s|-r|-x|-f|-l vmname|/path/to/configfile"
+	echo -e "qvm -b|--boot\t\t\tboot virtual machine config file"
+	echo -e "qvm -s|--stop\t\t\tstop virtual machine"
+	echo -e "qvm -r|--reboot\t\t\trestart virtual machine (via qemu guest agent)"
+	echo -e "qvm -x|--reset\t\t\treset virtual machine"
+	echo -e "qvm -f|--freeze\t\t\tfreeze|unfreeze guest filesystem (via qemu guest agent)"
+	echo -e "qvm -l|--list\t\t\tlist all virtual machines|show details of [vmname]"
+	echo
+	echo -e "guest modify"
+	echo -e "qvm -c|-u vmname[,mem|key|vnc],value"
+	echo -e " -u vmname,mem,4096\t\tchange the memory of [vmname] via ballooing"
+	echo -e " -u vmname,key,ctrl-alt-f1\tsend key combination to [vmname] (like ctrl-alt-f1)"
+	echo -e " -u vmname,vnc|spice,P4ssw0rd\tchange vnc or spice password of [vmname]"
+	echo -e "qvm -c|--connect vmname\t\tconnect to the unix socket of [vmname]"
+	echo
+	echo -e "host network"
+	echo -e "qvm -a|-d [bridge-dev(br0),]tap-name(q1tap1)"
+	echo -e "qvm -a|--add\t\t\tcreate a new tap device and link it to [bridge-dev]"
+	echo -e "qvm -d|--delete\t\t\tremove a tap device"
 }
 
 # start of the script
