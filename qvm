@@ -21,7 +21,7 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 # Discription:
-# user start/stop/modify script for qemu guest
+# qvm: script for working with kvm guests
 
 [ -e ~/.qvm.conf ] && source ~/.qvm.conf
 
