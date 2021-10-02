@@ -110,14 +110,6 @@ _check_qga(){
 	fi
 }
 
-_vm_edit(){
-	local _cmd=$1
-	local _vm=$2
-	local _value=$3
-
-	echo "${_cmd} ${_value}" | ${NC} -U -q1 ${PID_DIR}/${_vm}.sock > /dev/null 2>&1
-}
-
 _stop_tap_devices() {
 	local vmname="${1}"
 	local ready_to_delete=true
@@ -142,7 +134,6 @@ _stop_tap_devices() {
 		fi
 	fi
 }
-
 
 vm_list() {
 	if [ -n "${1}" ]; then
@@ -206,6 +197,14 @@ vm_update() {
 	local _vm="$(echo ${args}|cut -d',' -f1)"
 	local _setting="$(echo ${args}|cut -sd',' -f2)"
 	local _value="$(echo ${args}|cut -sd',' -f3)"
+
+	_vm_edit(){
+		local _cmd=$1
+		local _vm=$2
+		local _value=$3
+
+		echo "${_cmd} ${_value}" | ${NC} -U -q1 ${PID_DIR}/${_vm}.sock > /dev/null 2>&1
+	}
 
 	if [ -z "${_vm}" ] || [ -z "${_setting}" ] || [ -z "${_value}" ]; then
 		echo "missing var: please make sure you passed vmname,setting,value. see: qvm -h"
