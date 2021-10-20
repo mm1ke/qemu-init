@@ -29,188 +29,32 @@ description="Start Qemu guests"
 description_reboot="reboots the virtual machine via the qemu guest agent"
 description_reset="resets the virtual maschine"
 
-# programs / dependencies
-IP="/bin/ip"									# sys-apps/iproute2
-NC="/usr/bin/nc"							# net-analyzer/openbsd-netcat
-QGA="/usr/bin/qemu-ga-client"	# app-emulation/qemu[pyhton]
-QEMUCC="/usr/bin/qemucc"
-
-# check PID_DIR
-PID_DIR="/run/kvm"
-[ -d ${PID_DIR} ] || mkdir ${PID_DIR}
-
-# set TMP_DIR
-TMP_DIR="/tmp"
+command="/usr/bin/qvm"
 
 VM_NAME=${RC_SVCNAME#*.}
-CONF_PATH="/etc/conf.d/kvm.${VM_NAME}"
-
-QGA_AVAILABLE=false
-if $(command -v ${QGA} > /dev/null) ; then
-	QGA_AVAILABLE=true
-fi
+[ -z "${CONF_PATH}" ] && CONF_PATH="/etc/qvm/"
+VMPATH="${CONF_PATH}/${VM_NAME}"
 
 depend(){
 	need net
 }
 
-_stop_tap_devices() {
-	local ready_to_delete=true
-	# find all linked qtap devices
-	if [ -e "${PID_DIR}/${VM_NAME}.net" ]; then
-		for qtap_id in $(cat ${PID_DIR}/${VM_NAME}.net); do
-			if [ -e /sys/class/net/${qtap_id}/tun_flags ]; then
-				# remove tap interfaces
-				einfo "Removing ${qtap_id} interface"
-				${IP} link set dev ${qtap_id} down
-				eend $? "Failed to bring ${qtap_id} down"
-				${IP} link set ${qtap_id} nomaster
-				eend $? "Failed to unlink the bridge interface to ${qtap_id}"
-				${IP} tuntap del ${qtap_id} mode tap
-				eend $? "Failed to delete tap interface ${qtap_id}"
-
-				if [ -d /sys/class/net/${qtap_id}/ ]; then
-					ready_to_delete=false
-				fi
-			else
-				ewarn "WARNING: Couldn't remove ${qtap_id}. Unknown device"
-			fi
-		done
-		# better safe then sorry
-		if [ -e  "${PID_DIR}/${VM_NAME}.net" ]; then
-			if ${ready_to_delete}; then
-				rm -rf ${PID_DIR}/${VM_NAME}.net
-			else
-				ewarn "WARNING: couldn't delete all network interfaces."
-			fi
-		fi
-	fi
-}
-
-# check if qemu guest agent where enabled for vm
-_check_qga(){
-	if $(${QGA_AVAILABLE}); then
-		if [ -e ${PID_DIR}/${VM_NAME}.qga.sock ]; then
-			return 0
-		else
-			ewarn " WARNING: guest agent not active for ${VM_NAME}"
-			return 1
-		fi
-	else
-		ewarn " WARNING: qemu guest agent not available. Install app-emulation/qemu[python]"
-		return 1
-	fi
-}
-
 reboot(){
-	ebegin "Rebooting ${VM_NAME}"
-	_check_qga && ${QGA} --address=${PID_DIR}/${VM_NAME}.qga.sock reboot
+	${command} -r ${VMPATH}
 	eend $?
 }
 
 reset(){
-	ebegin "Reseting ${VM_NAME}"
-	echo "system_reset" | ${NC} -U -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
+	${command} -x ${VMPATH}
 	eend $?
 }
 
 start(){
-	myconfig=$(${QEMUCC} --checkandcreate ${CONF_PATH})
-	# password are only returned if remote access is enabled
-	vm_spice_pw=$(${QEMUCC} -s ${CONF_PATH})
-	vm_vnc_pw=$(${QEMUCC} -v ${CONF_PATH})
-
-	# if ${myconfig} is empty something went wrong
-	if [ -z "${myconfig}" ]; then
-		eerror "Something went wrong while creating the vm-config. Please check previous message(s)"
-		exit 1
-	fi
-
-	ebegin "Starting ${VM_NAME}..."
-	# Start the Virtual Machine
-	# start guest with /bin/sh, otherwise qemu breaks with
-	# multiple append statements (probably a qemu or runscript bug)
-	if ${VM_ENABLE_SDL}; then
-		# for now i assume the default display is :0
-		DISPLAY=:0 XAUTHORITY=/home/${VM_USER}/.Xauthority \
-			/bin/sh -c "TMPDIR="${TMP_DIR}" ${myconfig} >/dev/null"
-	else
-		/bin/sh -c "TMPDIR="${TMP_DIR}" ${myconfig} >/dev/null"
-	fi
-
-	# remove tap devices if the guest system couldn't be started
-	if [ "$?" != "0" ]; then
-		if [ -e "${PID_DIR}/${vmname}.net" ]; then
-			eerror "Failed to start ${VM_NAME}, removing qtap interfaces"
-			_stop_tap_devices
-			return 1
-		fi
-	fi
-
-	# set passwords for spice/vnc
-	if [ -n "${vm_spice_pw}" ]; then
-		echo "set_password spice ${vm_spice_pw}" \
-		| ${NC} -U -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
-	fi
-	if [ -n "${vm_vnc_pw}" ]; then
-		echo "set_password vnc ${vm_vnc_pw}" \
-		| ${NC} -U -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
-	fi
-
+	${command} -b ${VMPATH}
 	eend $?
 }
 
 stop(){
-	# set default kill wait to 80 seconds
-	[ -z "${VM_KILL_WAIT}" ] && VM_KILL_WAIT=80
-
-	if [ -e "${PID_DIR}/${VM_NAME}.pid" ]; then
-		local KVM_PID="$(cat ${PID_DIR}/${VM_NAME}.pid)"
-
-		if (kill -0 ${KVM_PID} >/dev/null 2>&1); then
-
-			ebegin "Stopping ${VM_NAME}"
-			# sending via nc (netcat) the shutdown command
-			echo "system_powerdown" | ${NC} -U -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
-			# waiting for system to shutdown
-			einfon "Waiting ${VM_KILL_WAIT} seconds for ${VM_NAME} to shutdown."
-			local cnt=0
-			while [ -n "$(ps -p ${KVM_PID} --no-heading)" ]; do
-				cnt=$(expr ${cnt} + 2)
-				if [ ${cnt} -gt ${VM_KILL_WAIT} ]; then
-					echo
-					eerror " Failed to shuddown ${VM_NAME}, Guest will be killed."
-					# kill qemu
-					kill -9 ${KVM_PID} > /dev/null 2>&1
-					sleep 1
-					ewarn " Killed ${VM_NAME}"
-					break
-				fi
-				# send system_powerdown every 20 seconds
-				if [ $(( ${cnt} % 20)) = 0 ]; then
-					echo "system_powerdown" | ${NC} -U -q1 ${PID_DIR}/${VM_NAME}.sock > /dev/null 2>&1
-				fi
-				sleep 2
-				printf "."
-			done
-			echo
-		else
-			ewarn "Couldn't find the process for ${VM_NAME}, guest might already down."
-			eend 0
-		fi
-
-		_stop_tap_devices
-		# for some reason when running as root qemu doesn't clean up pid/sock files
-		# after we stopped a vm. So lets clean them up manually.
-		for f in qga.sock sock pid; do
-			if [ -e "${PID_DIR}/${VM_NAME}.${f}" ]; then
-				rm ${PID_DIR}/${VM_NAME}.${f}
-			fi
-		done
-	else
-		ewarn "No pid file found for ${VM_NAME}. Is the machine even running?"
-	fi
-
+	${command} -s ${VMPATH}
 	eend 0
-
 }

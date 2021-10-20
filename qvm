@@ -23,6 +23,10 @@
 # Discription:
 # qvm: script for working with kvm guests
 
+MAX_QTAP=30
+DRYRUN=false
+TAP_DELETE=true
+
 [ -e ~/.qvm.conf ] && source ~/.qvm.conf
 
 # programs / dependencies
@@ -31,20 +35,24 @@ IP="/bin/ip"									# sys-apps/iproute2
 NC="/usr/bin/nc"							# net-analyzer/openbsd-netcat
 QGA="/usr/bin/qemu-ga-client"	# app-emulation/qemu[pyhton]
 LSOF="/usr/bin/lsof"					# sys-process/lsof
-QEMUCC="/usr/bin/qemucc"
 
-# check PID_DIR
+# log settings
+NOCOLOR='\e[0m'			# no color
+YELLOW='\e[1;33m'		# yellow color
+LIGHTRED='\e[1;31m' # lightred color
+GREEN='\e[1;32m'		# green color
+loginfo() { while IFS='' read -r line; do >&2 echo -e "${GREEN} * ${NOCOLOR}${line}"; done }
+loginfon() { while IFS='' read -r line; do >&2 echo -en "${GREEN} * ${NOCOLOR}${line}"; done }
+logwarn() { while IFS='' read -r line; do >&2 echo -e "${YELLOW} * ${NOCOLOR} Warning: ${line}"; done }
+logerr() { while IFS='' read -r line; do >&2 echo -e "${LIGHTRED} * ${NOCOLOR}${line}"; done }
+
+# check PID_DIR and TMP_DIR
 PID_DIR="/run/kvm"
 if [ $(id -u) = 0 ]; then
 	[ -d ${PID_DIR} ] || mkdir ${PID_DIR}
-else
-	PID_DIR="/run/user/$(id -u)"
-fi
-
-# check if TMP_DIR exists
-if [ $(id -u) = 0 ]; then
 	TMP_DIR="/tmp"
 else
+	PID_DIR="/run/user/$(id -u)"
 	if [ -n "${TMP_DIR}" ]; then
 		[ -w ${TMP_DIR} ] || TMP_DIR="/run/user/$(id -u)"
 	else
@@ -58,15 +66,530 @@ if $(command -v ${QGA} > /dev/null) ; then
 	QGA_AVAILABLE=true
 fi
 
+_dry_run_check(){
+	if ${DRYRUN}; then
+		return 0
+	else
+		return 1
+	fi
+}
+
+_vm_edit(){
+	local _cmd=$1
+	local _vm=$2
+	local _value=$3
+
+	echo "${_cmd} ${_value}" | ${NC} -U -q1 ${PID_DIR}/${_vm}.sock > /dev/null 2>&1
+}
+
+_check_remote_access_port(){
+	# remote access checks
+	local range=${1}
+	local ip=${2}
+	local port=${3}
+
+	# check with netstat if a port is used
+	if [ -z "${port}" ]; then
+		local port_nr=0
+		while $(netstat -nat | egrep "${ip}:${range}${port_nr}[^0-9]" >/dev/null); do
+			port_nr=$(expr ${port_nr} + 1)
+		done
+		local access_port="${range}${port_nr}"
+	else
+		local access_port="${port}"
+	fi
+
+	echo ${access_port}
+}
+
+_cfg_network_check(){
+	# network checks/default settings
+	local _vm_interfaces="${VM_NETWORK} ${VM_NETWORK0} ${VM_NETWORK1} ${VM_NETWORK2} ${VM_NETWORK3} \
+		${VM_NETWORK4} ${VM_NETWORK5} ${VM_NETWORK6} ${VM_NETWORK7} ${VM_NETWORK8} ${VM_NETWORK9}"
+	local _net_user_set=false
+	local _net_tap_set=false
+	local _net_id=0
+	local _random_mac=false
+	local _vhost_set=""
+	if ${VM_ENABLE_VHOST:-false}; then
+		_vhost_set=",vhost=on"
+	fi
+
+	for single_net in ${_vm_interfaces}; do
+		local net_typ="$(echo ${single_net}|cut -d';' -f1)"
+		local net_mac="$(echo ${single_net}|cut -sd';' -f2)"
+		local net_drv="$(echo ${single_net}|cut -sd';' -f3)"
+		local net_brd="$(echo ${single_net}|cut -sd';' -f4)"
+		local net_qtp="$(echo ${single_net}|cut -sd';' -f5)"
+
+		# set default network driver
+		net_drv=${net_drv:-rtl8139}
+		# check for mac address
+		if [ -z "${net_mac}" ]; then
+			local _random_mac=true
+			# set random mac address
+			net_mac="$(printf 'AA:6E:17:00:%02X:%02X\n' \
+				$(($(dd if=/dev/urandom count=1 2> /dev/null | cksum | cut -d' ' -f1) % 256)) \
+				$(($(dd if=/dev/urandom count=1 2> /dev/null | cksum | cut -d' ' -f1) % 256)))"
+		fi
+
+		case ${net_typ} in
+			tap)
+				# if a tap device is set, set BRDEV to the first bridge device to get
+				# a ip for spice/vnc remote access
+				if ! ${_net_tap_set}; then
+					_net_tap_set=true
+					BRDEV=${net_brd}
+				fi
+				# check bridge device
+				if [ -n "${net_brd}" ]; then
+					if ! [ -d /sys/class/net/${net_brd}/bridge/ ]; then
+						echo "${net_brd} is not a bridge device. ${DEFAULT_MSG}" | (logerr)
+						_dry_run_check || return 1
+					fi
+				else
+					echo "No bridge device setup! ${DEFAULT_MSG}" | (logerr)
+					_dry_run_check || return 1
+				fi
+				# check for max_vms
+				if [ ${_net_id} -ge ${MAX_QTAP} ]; then
+					echo "Maximum number of network connections reached. Please increase the MAX_QTAP variable." | (logerr)
+					_dry_run_check || return 1
+				fi
+				# user defined interfaces
+				if [ -n "${net_qtp}" ]; then
+					# check if interface exists, other create it (NET_INT)
+					if ! [ -f /sys/class/net/${net_qtp}/tun_flags ]; then
+						NET_INT+=( ${net_brd},${net_qtp} )
+					else
+						# add the Interface net list
+						if [ "$(cat /sys/class/net/${net_qtp}/operstate)" = "up" ]; then
+							echo "\"${net_qtp}\" already used. ${DEFAULT_MSG}" | (logerr)
+							_dry_run_check || return 1
+						else
+							echo "${net_qtp} " >> ${PID_DIR}/${VM_NAME}.net
+						fi
+					fi
+					if ${_random_mac}; then
+						echo "MAC address \"${net_mac}\" for ${net_qtp} is random and will be lost after shutdown" | (logwarn)
+					fi
+					VM_NET="${VM_NET} \
+						-netdev tap,id="${VM_NAME}_${_net_id}",ifname=${net_qtp},script=no,downscript=no${_vhost_set} \
+						-device ${net_drv},netdev="${VM_NAME}_${_net_id}",mac=${net_mac}"
+				# random interfaces
+				else
+					# get the id nummber for qtap...
+					while (${BRIDGE} link | egrep -oq qtap${_net_id}); do
+						_net_id=$(expr ${_net_id} + 1)
+					done
+					if ${_random_mac}; then
+						echo "MAC address \"${net_mac}\" for qtap${_net_id} is random and will be lost after shutdown" | (logwarn)
+					fi
+					VM_NET="${VM_NET} \
+						-netdev tap,id="${VM_NAME}_${_net_id}",ifname=qtap${_net_id},script=no,downscript=no${_vhost_set} \
+						-device ${net_drv},netdev="${VM_NAME}_${_net_id}",mac=${net_mac}"
+					# save interfaces to create later
+					NET_INT+=( ${net_brd},qtap${_net_id} )
+				fi
+				;;
+
+			user)
+				if (${_net_user_set}); then
+					echo "Network typ user can only be used once. ${DEFAULT_MSG}" | (logerr)
+					_dry_run_check || return 1
+				fi
+				_net_user_set=true
+				if ${_random_mac}; then
+					echo "MAC address \"${net_mac}\" for usernet is random and will be lost after shutdown" | (logwarn)
+				fi
+				VM_NET="${VM_NET} \
+						-netdev user,id=${VM_NAME}_${_net_id} \
+						-device ${net_drv},netdev="${VM_NAME}_${_net_id}",mac=${net_mac}"
+				;;
+
+			*)
+				echo "Unknow Network Typ. Network will be disabled" | (logwarn)
+				VM_NET="${VM_NET} -net none"
+				continue
+				;;
+		esac
+		_net_id=$(expr ${_net_id} + 1)
+	done
+}
+
+_cfg_9p_check() {
+	# 9P directory checks
+	local _vm_9pshare="${VM_9P_SHARE} ${VM_9P_SHARE0} ${VM_9P_SHARE1} ${VM_9P_SHARE2} ${VM_9P_SHARE3} \
+		${VM_9P_SHARE4} ${VM_9P_SHARE5} ${VM_9P_SHARE6} ${VM_9P_SHARE7} ${VM_9P_SHARE8} ${VM_9P_SHARE9}"
+	local _9p_id=0
+
+	if [ -n "${_vm_9pshare}" ]; then
+		for single_9p in ${_vm_9pshare}; do
+			local share_name="$(echo ${single_9p}|cut -d';' -f1)"
+			local share_path="$(echo ${single_9p}|cut -sd';' -f2)"
+			local share_secm="$(echo ${single_9p}|cut -sd';' -f3)"
+
+			if [ -z ${share_name} ] || ! [ -e ${share_path} ]; then
+				echo "No name given or Path does not exist. ${DEFAULT_MSG}" | (logerr)
+				_dry_run_check || return 1
+			fi
+			# default security model none
+			share_secm=${share_secm:-none}
+
+			VM_9P="${VM_9P} \
+				-fsdev local,id="${VM_NAME}_9p_${_9p_id}",path="${share_path}",security_model="${share_secm}" \
+				-device virtio-9p-pci,fsdev="${VM_NAME}_9p_${_9p_id}",mount_tag="${share_name}""
+			# print out 9p settings
+			echo "Adding 9P mount-tag: \"${share_name}\" sharing \"${share_path}\" with security \"${share_secm}\"" | (loginfo)
+
+			_9p_id=$(expr ${_9p_id} + 1)
+		done
+	fi
+}
+
+_cfg_harddisk_check() {
+	# image checks/default settings
+	local _vm_harddisk="${VM_HARDDISK} ${VM_HARDDISK0} ${VM_HARDDISK1} ${VM_HARDDISK2} ${VM_HARDDISK3} \
+		${VM_HARDDISK4} ${VM_HARDDISK5} ${VM_HARDDISK6} ${VM_HARDDISK7} ${VM_HARDDISK8} ${VM_HARDDISK9}"
+
+	if [ -n "${_vm_harddisk}" ]; then
+		for single_hd in ${_vm_harddisk}; do
+			local hd_path="$(echo ${single_hd}|cut -d';' -f1)"
+			local hd_if="$(echo ${single_hd}|cut -sd';' -f2)"
+			local hd_cache="$(echo ${single_hd}|cut -sd';' -f3)"
+			local hd_aio="$(echo ${single_hd}|cut -sd';' -f4)"
+
+			if [ -z "${hd_path}" ] || ! [ -e "${hd_path}" ]; then
+				echo "${hd_path} not found. ${DEFAULT_MSG}" | (logerr)
+				_dry_run_check || return 1
+			fi
+			# check if image is already running
+			if $(${LSOF} -c qemu 2>/dev/null | grep -q ${hd_path} >/dev/null); then
+				echo "\"${VM_NAME}\" is already running!" | (logerr)
+				_dry_run_check || return 1
+			fi
+			# set default settings for hd if nothing is set
+			hd_cache=${hd_cache:-writethrough}
+			hd_if=${hd_if:-ide}
+			hd_aio=${hd_aio:-threads}
+			# set image format to raw if lvm partition is used or file extensions end with "raw"
+			[ -b "${hd_path}" ] && hd_path="${hd_path},format=raw"
+			[ "${hd_path##*.}" = "raw" ] && hd_path="${hd_path},format=raw"
+
+			VM_HD="${VM_HD} \
+				-drive file=${hd_path},if=${hd_if},cache=${hd_cache},aio=${hd_aio}"
+		done
+	fi
+}
+
+_cfg_remote_access_check() {
+	# get interface ip
+	if ${_net_tap_set}; then
+		local local_ip="$(${IP} address show ${BRDEV} \
+			| egrep -o '[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}' \
+			| head -n1)"
+	else
+		local local_ip="0.0.0.0"
+	fi
+
+	# remote access spice
+	VM_ENABLE_SPICE="$(echo ${VM_REMOTE_ACCESS_SPICE:-false}|cut -d';' -f1)"
+	VM_ENABLE_VNC="$(echo ${VM_REMOTE_ACCESS_VNC:-false}|cut -d';' -f1)"
+
+	if ${VM_ENABLE_SPICE}; then
+		spice_password="$(echo ${VM_REMOTE_ACCESS_SPICE}|cut -sd';' -f2)"
+		spice_ip="$(echo ${VM_REMOTE_ACCESS_SPICE}|cut -sd';' -f3)"
+		[ -z "${spice_ip}" ] && spice_ip="${local_ip}"
+		spice_port="$(echo ${VM_REMOTE_ACCESS_SPICE}|cut -sd';' -f4)"
+		spice_port="$(_check_remote_access_port 580 "${spice_ip}" "${spice_port}")"
+
+		echo "Spice access on ${spice_ip}:${spice_port} (Password: \"${spice_password}\")" | (loginfo)
+	fi
+	if ${VM_ENABLE_VNC}; then
+		vnc_password="$(echo ${VM_REMOTE_ACCESS_VNC}|cut -sd';' -f2)"
+		vnc_ip="$(echo ${VM_REMOTE_ACCESS_VNC}|cut -sd';' -f3)"
+		[ -z "${vnc_ip}" ] && vnc_ip="${local_ip}"
+		vnc_port="$(echo ${VM_REMOTE_ACCESS_VNC}|cut -sd';' -f4)"
+		vnc_port="$(expr $(_check_remote_access_port 590 "${vnc_ip}" "${vnc_port}") - 5900)"
+
+		echo " VNC access on ${vnc_ip}:$(expr ${vnc_port} + 5900) (Password: \"${vnc_password}\")" | (loginfo)
+	fi
+
+	if ! ${VM_ENABLE_SPICE} && ! ${VM_ENABLE_VNC} && ! ${VM_ENABLE_SDL} && ${VM_ENABLE_DAEMONIZE}; then
+		echo "No remote access or sdl enabled. At least one of them needs to be enabled!" | (logerr)
+		_dry_run_check || return 1
+	fi
+}
+
+_cfg_audio_check() {
+	local _vm_audio="${VM_AUDIO} ${VM_AUDIO0} ${VM_AUDIO1} ${VM_AUDIO2} ${VM_AUDIO3} \
+		${VM_AUDIO4} ${VM_AUDIO5} ${VM_AUDIO6} ${VM_AUDIO7} ${VM_AUDIO8} ${VM_AUDIO9}"
+	local _audio_id=0
+
+	if [ -n "${_vm_audio}" ]; then
+		for single_audio in ${_vm_audio}; do
+			local audio_dev="$(echo ${single_audio}|cut -d';' -f1)"
+			local audio_hw="$(echo ${single_audio}|cut -sd';' -f2)"
+
+			if [ -z "${audio_dev}" ]; then
+				audio_dev="-audiodev sdl,id=${VM_NAME}_s_${_audio_id},driver=sdl"
+			else
+				case ${audio_dev} in
+					sdl|alsa|oss|none)
+						audio_dev="-audiodev ${audio_dev},id=${VM_NAME}_s_${_audio_id},driver=${audio_dev}"
+						;;
+					*)
+						# not supported
+						echo "Audiodev \"${audio_dev}\" is not supported. ${DEFAULT_MSG}" | (logerr)
+						_dry_run_check || return 1
+						;;
+				esac
+			fi
+			if [ -z "${audio_hw}" ]; then
+				audio_hw="-device ich9-intel-hda -device hda-output,audiodev=${VM_NAME}_s_${_audio_id}"
+			else
+				case "${audio_hw}" in
+					ich9-intel-hda)
+						audio_hw="-device ${audio_hw} -device hda-output,audiodev=${VM_NAME}_s_${_audio_id}"
+						;;
+					usb-audio)
+						audio_hw="-device ${audio_hw},audiodev=${VM_NAME}_s_${_audio_id},multi=on"
+						;;
+					*)
+						audio_hw="-device ${audio_hw},audiodev=${VM_NAME}_s_${_audio_id}"
+						;;
+				esac
+			fi
+
+			VM_SOUND="${VM_SOUND} ${audio_dev} ${audio_hw}"
+
+			_audio_id=$(expr ${_audio_id} + 1)
+		done
+	fi
+}
+
+_cfgcheck(){
+	# default settings
+	VM_ENABLE_SDL=$(echo ${VM_ENABLE_SDL:-false})
+	VM_ENABLE_GL=$(echo ${VM_ENABLE_GL:-false})
+
+	VM_DEV="${VM_DEVICES} ${VM_DEVICES0} ${VM_DEVICES1} ${VM_DEVICES2} ${VM_DEVICES3} ${VM_DEVICES4} \
+		${VM_DEVICES5} ${VM_DEVICES6} ${VM_DEVICES7} ${VM_DEVICES8} ${VM_DEVICES9}"
+
+	if (${VM_ENABLE_SNAPSHOTMODE:-false}); then
+		echo "SNAPSHOT MODE! Changes to the guest system won't be saved!" | (logwarn)
+	fi
+
+	if ${VM_ENABLE_GL}; then
+		if ! [ "${VM_DISPLAY}" = "virtio" ] && ! ${VM_ENABLE_SDL}; then
+			echo "Virtio GPU-Driver and SDL must be enabled for OpenGL" | (logwarn)
+			VM_ENABLE_GL=false
+		fi
+	fi
+
+	# basic tests/settings
+
+
+	# if script runs as root respect VM_USER setting from config file
+	# otherwise use current running user
+	SET_USER="true"
+	if [ $(id -u) = 0 ]; then
+		if [ -n "${VM_USER}" ]; then
+			if ! $(getent passwd ${VM_USER} >/dev/null 2>&1); then
+				echo "User \"${VM_USER}\" not found. User set to nobody" | (logwarn)
+				VM_USER="nobody"
+				VM_ENABLE_SDL=false
+				VM_ENABLE_GL=false
+			fi
+		else
+			echo "No user set. User nobody will be used" | (logwarn)
+			VM_USER="nobody"
+			VM_ENABLE_SDL=false
+			VM_ENABLE_GL=false
+		fi
+	else
+		# if run as non root, set SET_USER to false to avoid using -runas
+		SET_USER="false"
+	fi
+
+	# check if SDL can be enabled (needs .Xauthority file)
+	_check_xauth() {
+		if ${VM_ENABLE_SDL}; then
+			if ! [ -e /home/${1}/.Xauthority ]; then
+				echo "No Xauthority file for user \"${1}\". Disabling SDL output" | (logwarn)
+				VM_ENABLE_SDL=false
+				VM_ENABLE_GL=false
+			fi
+		fi
+	}
+	# check for Xauthority file
+	if [ $(id -u) = 0 ]; then
+		_check_xauth "${VM_USER}"
+	else
+		_check_xauth "$(id -un)"
+	fi
+
+	# guests can't boot from other devices if vm_kernel/vm_initrd is used
+	if [ -n "${VM_KERNEL}" ] && [ -n "${VM_INITRD}" ]; then
+		VM_BOOT_DEV=""
+	else
+		VM_KERNEL=""
+	fi
+
+	# guest wont start with "host" cpu if kvm is disabled
+	if [ "${VM_CPU}" = "host" ] && [ -z "${VM_ACCEL}" ]; then
+		VM_ACCEL="kvm"
+	fi
+
+	# arch spezific configuration
+	case ${VM_ARCH} in
+		#arm)
+		#	# arm has only smc91c111 - see qemu-system-arm -net nic,model=?
+		#	VM_NET_DRV="smc91c111"
+		#	;;
+		mips)
+			# mips only supports up to 256mb ram
+			if [ ${VM_MEMORY} -gt 256 ]; then
+				VM_MEMORY=256
+				echo "MIPS only supports up to 256MB ram. ${DEFAULT_MSG}" | (logwarn)
+			fi
+			;;
+	esac
+
+	# cdrom checks
+	if [ -n "${VM_CDROM}" ]; then
+		if ! [ -e "${VM_CDROM}" ]; then
+			echo "Image dosn't exist. ${DEFAULT_MSG}" | (logerr)
+			_dry_run_check || return 1
+		fi
+	fi
+
+	_cfg_harddisk_check || return 1
+	_cfg_network_check || return 1
+	_cfg_9p_check || return 1
+	_cfg_remote_access_check || return 1
+	_cfg_audio_check || return 1
+}
+
+
+_myconfig(){
+	# basic config
+	myconfig=(
+		-name ${VM_NAME}
+		-monitor unix:${PID_DIR}/${VM_NAME}.sock,server=on,wait=off
+		-pidfile ${PID_DIR}/${VM_NAME}.pid
+		-device virtio-balloon
+		-m ${VM_MEMORY:-512}
+		-smp ${VM_SMP:-1}
+		-machine ${VM_MACHINE:-pc}
+		-k ${VM_LC:-de}
+	)
+
+	# set runas user
+	${SET_USER} && myconfig+=(-runas ${VM_USER})
+	# set cpu
+	[ -n "${VM_CPU}" ] && myconfig+=(-cpu ${VM_CPU})
+	# set vm accel
+	[ -n "${VM_ACCEL}" ] && myconfig+=(-accel ${VM_ACCEL})
+
+	if [ -n "${VM_KERNEL}" ]; then
+		myconfig+=(
+			-kernel ${VM_KERNEL}
+			-initrd ${VM_INITRD}
+		)
+		[ -n "${VM_APPEND}" ] && myconfig+=(-append "${VM_APPEND}")
+	fi
+
+	# enable/disable usb support
+	(${VM_ENABLE_USB:-true}) && myconfig+=(-usb)
+	# daemonize true/false
+	(${VM_ENABLE_DAEMONIZE:-true}) && myconfig+=(-daemonize)
+	# snapshotmode on/off
+	(${VM_ENABLE_SNAPSHOTMODE:-false}) && myconfig+=(-snapshot)
+	# spice virtual serial port (copy/paste)
+	(${VM_ENABLE_VIRTSERIAL:-true}) && myconfig+=(
+		-device virtio-serial
+		-chardev spicevmc,id=vdagent,name=vdagent
+		-device virtserialport,chardev=vdagent,name=com.redhat.spice.0
+	)
+	# qemu guest agent (qga)
+	(${VM_ENABLE_QGA:-false}) && myconfig+=(
+		-device virtio-serial
+		-chardev socket,path=${PID_DIR}/${VM_NAME}.qga.sock,server=on,wait=off,id=${VM_NAME}-qga
+		-device virtserialport,chardev=${VM_NAME}-qga,name=org.qemu.guest_agent.0
+	)
+
+	# sdl output
+	if (${VM_ENABLE_SDL}); then
+		if (${VM_ENABLE_GL}); then
+			myconfig+=(-display sdl,gl=on)
+		else
+			myconfig+=(-display sdl)
+		fi
+	fi
+
+	# enable (multiple) usb redir devices
+	while [ ${VM_USB_REDIR:-0} -gt 0 ]; do
+		myconfig+=(
+			-chardev spicevmc,name=usbredir,id=usbredirchardev_${VM_USB_REDIR}
+			-device usb-redir,chardev=usbredirchardev_${VM_USB_REDIR},id=usbredirdev_${VM_USB_REDIR},debug=3
+		)
+		VM_USB_REDIR=$(expr ${VM_USB_REDIR} - 1)
+	done
+
+	# remote access settings
+	# passwords are set after a vm started
+	if ${VM_ENABLE_SPICE}; then
+		if [ -z "${spice_password}" ]; then
+			myconfig+=(-spice port=${spice_port},addr=${spice_ip},disable-ticketing=on)
+		else
+			myconfig+=(-spice port=${spice_port},addr=${spice_ip})
+		fi
+	fi
+	if ${VM_ENABLE_VNC}; then
+		if [ -n "${vnc_password}" ]; then
+			myconfig+=(-vnc ${vnc_ip}:${vnc_port},password)
+		else
+			myconfig+=(-vnc ${vnc_ip}:${vnc_port})
+		fi
+	fi
+
+	if ! ${VM_ENABLE_SPICE} && ! ${VM_ENABLE_VNC} && ! ${VM_ENABLE_DAEMONIZE}; then
+		(${VM_ENABLE_SDL}) || myconfig+=(-nographic)
+	fi
+
+	# enable/disable harddisks
+	[ -z "${VM_HD}" ] || myconfig+=(${VM_HD})
+	# network settings
+	[ -z "${VM_NET}" ] || myconfig+=(${VM_NET})
+	# 9p shares
+	[ -z "${VM_9P}" ] || myconfig+=(${VM_9P})
+	# display settings
+	[ -z "${VM_DISPLAY}" ] || myconfig+=(-vga ${VM_DISPLAY})
+	# audio settings
+	[ -z "${VM_SOUND}" ] || myconfig+=(${VM_SOUND})
+	# other devices
+	[ -z "${VM_DEV}" ] || myconfig+=(${VM_DEV})
+	# cdrom settings
+	[ -z "${VM_CDROM}" ] || myconfig+=(-cdrom ${VM_CDROM})
+
+	if [ -n "${VM_BOOT_DEV}" ]; then
+		case ${VM_BOOT_DEV} in
+			floppy|a) myconfig+=(-boot a) ;;
+			harddisk|c) myconfig+=(-boot c) ;;
+			cdrom|d) myconfig+=(-boot d) ;;
+			network|n) myconfig+=(-boot n) ;;
+		esac
+	fi
+}
+
 _check_running_vm() {
 	local _vm=${1}
-	# now that we defined the vm_name check if it's running at the moment. If
-	# not print a error and return 1.
 	# if the executing user is not root we only see vm's of the user since the PID
 	# files for system vm's are at different place and usually not readable for
 	# users
 	if ! [ -f "${PID_DIR}/${_vm}.pid" ]; then
-		echo "VM: \"${_vm}\" not running!"
+		echo "\"${_vm}\" not running!" | (loginfo)
 		exit 1
 	fi
 }
@@ -79,7 +602,7 @@ _define_vm() {
 	if [ -f ${_vm_arg} ]; then
 		# if it's a file check if it belongs to /etc/conf.d, since those config
 		# files start with "kvm." which need to be removed
-		if [ "${_vm_arg}" = "/etc/conf.d/kvm.${_vm_arg##*.}" ]; then
+		if [ "${_vm_arg%.*}" = "/etc/conf.d/kvm" ]; then
 			_vm_name="${_vm_arg##*.}"
 		# otherwise simply remove the path
 		else
@@ -98,40 +621,15 @@ _check_qga(){
 	local _vm=$1
 
 	if $(${QGA_AVAILABLE}); then
-		if [ -e ${PID_DIR}/${_vm}.qga.sock ]; then
+		if [ -e "${PID_DIR}/${_vm}.qga.sock" ]; then
 			return 0
 		else
-			echo "WARNING: guest agent not active for ${_vm}"
+			echo "QEMU guest agent not active for ${_vm}" | (logwarn)
 			return 1
 		fi
 	else
-		echo "WARNING: qemu guest agent not available. Install app-emulation/qemu[python]"
+		echo "QEMU guest agent not available. Install app-emulation/qemu[python]" | (logwarn)
 		return 1
-	fi
-}
-
-_stop_tap_devices() {
-	local vmname="${1}"
-	local ready_to_delete=true
-
-	# find all linked qtap devices
-	if [ -e "${PID_DIR}/${vmname}.net" ]; then
-		for qtap_id in $(cat ${PID_DIR}/${vmname}.net); do
-			# check if qtap_id is a tap device
-			delete_network ${qtap_id}
-			if [ -d /sys/class/net/${qtap_id}/ ]; then
-				ready_to_delete=false
-			fi
-		done
-		# better safe then sorry
-		if [ -e  "${PID_DIR}/${vmname}.net" ]; then
-			# only delete this file if we could remove all interfaces
-			if ${ready_to_delete}; then
-				rm -rf ${PID_DIR}/${vmname}.net
-			else
-				echo "Warning: couldn't delete all network interfaces."
-			fi
-		fi
 	fi
 }
 
@@ -142,33 +640,36 @@ vm_list() {
 	fi
 
 	if [ -z "${vmname}" ]; then
-		echo "Overview of all VMs"
-		echo " System VMs:"
-		for i in $(find /etc/conf.d/ -type f -name "kvm.*"); do
-			if [ -r /run/kvm ]; then
-				if [ -e /run/kvm/${i##*.}.pid ]; then
-					echo "  U ${i##*.} (PID: $(cat /run/kvm/${i##*.}.pid))"
-				else
-					echo "  D ${i##*.}"
+		echo "System VMs:"
+		[ -f /etc/conf.d/kvm ] && source /etc/conf.d/kvm
+		[ -z "${CONF_PATH}" ] && CONF_PATH="/etc/qvm/"
+		if [ -d ${CONF_PATH} ]; then
+			for i in $(find ${CONF_PATH} -type f); do
+				if [ -e /etc/init.d/kvm.${i##*/} ]; then
+					if [ -r "/run/kvm/${i##*/}.pid" ]; then
+						echo "${i##*/} (PID: $(cat /run/kvm/${i##*/}.pid))" | (loginfo)
+					else
+						if [ -e "/run/kvm/${i##*/}.pid" ]; then
+							echo "${i##*/} (PID: -)" | (loginfo)
+						else
+							echo "${i##*/}" | (logerr)
+						fi
+					fi
 				fi
-			elif [ -e /${PID_DIR}/${i##*.}.pid ]; then
-				echo "  U ${i##*.} (PID: $(cat ${PID_DIR}/${i##*.}.pid)) (User started)"
-			else
-				echo "  ? ${i##*.}"
-			fi
-		done
+			done
+		fi
 		if [ -n "${CFG_DIR}" ]; then
-			echo " Local VMs:"
+			echo "User VMs:"
 			for i in $(find ${CFG_DIR} -type f); do
 				if [ -e ${PID_DIR}/${i##*/}.pid ]; then
-					echo "  U ${i##*/} (PID: $(cat ${PID_DIR}/${i##*/}.pid))"
+					echo "${i##*/} (PID: $(cat ${PID_DIR}/${i##*/}.pid))" | (loginfo)
 				else
-					echo "  D ${i##*/}"
+					echo "${i##*/}" | (logerr)
 				fi
 			done
 		fi
 	else
-		if [ -e /${PID_DIR}/${vmname}.pid ]; then
+		if [ -e "${PID_DIR}/${vmname}.pid" ]; then
 			local _vm_pid="$(cat /${PID_DIR}/${vmname}.pid)"
 			local _vm_starttime="$(ps -o "lstart=" -p ${_vm_pid})"
 			local _vm_uptime="$(ps -o "etime=" -p ${_vm_pid}|tr -d '[:space:]')"
@@ -198,14 +699,6 @@ vm_update() {
 	local _setting="$(echo ${args}|cut -sd',' -f2)"
 	local _value="$(echo ${args}|cut -sd',' -f3)"
 
-	_vm_edit(){
-		local _cmd=$1
-		local _vm=$2
-		local _value=$3
-
-		echo "${_cmd} ${_value}" | ${NC} -U -q1 ${PID_DIR}/${_vm}.sock > /dev/null 2>&1
-	}
-
 	if [ -z "${_vm}" ] || [ -z "${_setting}" ] || [ -z "${_value}" ]; then
 		echo "missing var: please make sure you passed vmname,setting,value. see: qvm -h"
 		exit 1
@@ -214,79 +707,123 @@ vm_update() {
 	local vmname=$(_define_vm ${_vm})
 	_check_running_vm ${vmname} || exit 1
 
-
 	case ${_setting} in
 		mem|memory)
-			echo "Changing Memory to ${_mem}MB for ${_vm}"
+			echo "Changing Memory to ${_mem}MB for ${_vm}" | (loginfo)
 			_vm_edit balloon ${vmname} ${_value}
 			;;
 		key|sendkey)
-			echo "Sending key combination: ${_value}"
+			echo "Sending key combination: ${_value}" | (loginfo)
 			_vm_edit sendkey ${vmname} ${_value}
 			;;
 		vnc)
-			echo "Changing VNC password to ${_value}"
+			echo "Changing VNC password to ${_value}" | (loginfo)
 			_vm_edit "set_password vnc" ${vmname} ${_value}
 			;;
 		spice)
-			echo "Changing SPICE password to ${_value}"
+			echo "Changing SPICE password to ${_value}" | (loginfo)
 			_vm_edit "set_password spice" ${vmname} ${_value}
 			;;
 	esac
 }
 
 create_network() {
-	local _type="${1%%,*}"
-	local _name="${1##*,}"
+	local allint="${1}"
+	local singleint
 
-	if [ -z "${_type}" ] || [ -z "${_name}" ]; then
-		echo "missing var: please make sure you passed type,name. see: qvm -h"
+	if [ -z "${allint}" ]; then
+		echo "Missing argument. Please make sure you passed the tap name. see: qvm -h" | (logerr)
 		exit 1
 	fi
 
-	if [ -d /sys/class/net/${_type}/bridge/ ]; then
-		echo "creating tap device on bridge: ${_type} called ${_name}..."
-		read -r -d '' CREATE_TAP <<- EOM
+	read -r -d '' CREATE_TAP <<- EOM
+	EOM
+
+	for singleint in ${allint}; do
+		local _type="${singleint%%,*}"
+		local _name="${singleint##*,}"
+
+		if [ -z "${_type}" ] || [ -z "${_name}" ]; then
+			echo "Missing variable: please make sure you passed type,name. see: qvm -h" | (logerr)
+			exit 1
+		fi
+
+		echo "Creating interface \"${_name}\" on bridge \"${_type}\" ..." | (loginfo)
+		read -r -d '' TAP <<- EOM
 			${IP} tuntap add dev ${_name} mode tap user $(id -un)
 			${IP} link set ${_name} master ${_type}
 			${IP} link set dev ${_name} up promisc on
 		EOM
-		# to create tap we need to run the commands as root
-		su -l root -c "${CREATE_TAP}"
-	#elif
+
+		read -r -d '' CREATE_TAP <<- EOM
+			${CREATE_TAP}
+			${TAP}
+		EOM
+
+		if [ -n ${VM_NAME} ]; then
+			echo "${_name} " >> ${PID_DIR}/${VM_NAME}.net
+		fi
+	done
+
+	# to create tap we need to run the commands as root
+	if [ $(id -u) = 0 ]; then
+		/bin/sh -c "${CREATE_TAP}"
 	else
-		echo "Cannot create ${_name}. ${_type} is not support"
-		exit 1
+		if ! $(su -l root -c "${CREATE_TAP}"); then
+			echo "Error creating network interfaces" | (logerr)
+			exit 1
+		fi
 	fi
 }
 
 delete_network() {
-	local _name="${1}"
-	if [ -z "${_name}" ]; then
-		echo "missing var: please make sure you passed the tap name. see: qvm -h"
+	local allint="${1}"
+	local singleint
+
+	if [ -z "${allint}" ]; then
+		echo "Missing argument. Please make sure you passed the tap name. see: qvm -h" | (logerr)
 		exit 1
 	fi
 
-	if [ -e /sys/class/net/${_name}/tun_flags ]; then
-		# remove tap interfaces
-		echo "Removing ${_name} interface"
-		if [ "$(cat /sys/class/net/${_name}/owner)" = "$(id -u)" ]; then
-			${IP} tuntap del ${_name} mode tap
-		else
-			# print a warning if tap devices doesn't belong to user (only for non-root
-			# users)
-			if ! [ $(id -u) = 0 ]; then
-				echo "Warning: ${_name} belongs to user: $(cat /sys/class/net/${_name}/owner)"
+	read -r -d '' DELETE_TAP <<- EOM
+	EOM
+
+	for singleint in ${allint}; do
+		if [ -e /sys/class/net/${singleint}/tun_flags ]; then
+			# remove tap interfaces
+			echo "Removing \"${singleint}\" interface ..." | (loginfo)
+			if [ "$(cat /sys/class/net/${singleint}/owner)" = "$(id -u)" ]; then
+				${IP} tuntap del ${singleint} mode tap
+			else
+				# print a warning if tap devices doesn't belong to user (only for non-root
+				# users)
+				if ! [ $(id -u) = 0 ]; then
+					echo "\"${singleint}\" belongs to user: $(cat /sys/class/net/${singleint}/owner)" | (logwarn)
+				fi
+				read -r -d '' TAP <<- EOM
+					${IP} link set dev ${singleint} down
+					${IP} link set ${singleint} nomaster
+					${IP} tuntap del ${singleint} mode tap
+				EOM
+
+				read -r -d '' DELETE_TAP <<- EOM
+					${DELETE_TAP}
+					${TAP}
+				EOM
 			fi
-			read -r -d '' DELETE_TAP <<- EOM
-				${IP} link set dev ${_name} down
-				${IP} link set ${_name} nomaster
-				${IP} tuntap del ${_name} mode tap
-			EOM
-			su -l root -c "${DELETE_TAP}"
+		else
+			echo "Couldn't remove \"${singleint}\". Unknown device" | (logwarn)
 		fi
+	done
+
+	# to delete tap we need to run the commands as root
+	if [ $(id -u) = 0 ]; then
+		/bin/sh -c "${DELETE_TAP}"
 	else
-		echo "Couldn't remove ${_name}. Unknown device"
+		if ! $(su -l root -c "${DELETE_TAP}"); then
+			echo "Error deleting network interfaces" | (logerr)
+			exit 1
+		fi
 	fi
 }
 
@@ -313,7 +850,7 @@ vm_connect(){
 	echo "Connecting to socket ${PID_DIR}/${vmname}.sock"
 	echo "Use CTRL+D to detach from the socket"
 	echo
-	${NC} -U -q1 ${PID_DIR}/${vmname}.sock
+	${NC} -U -q1 ${PID_DIR}/${vmname}.sock > /dev/null 2>&1
 }
 
 vm_freeze_thaw(){
@@ -335,66 +872,76 @@ vm_freeze_thaw(){
 }
 
 vm_start(){
-	local vm_config_file=${1}
-	if [ $(id -u) = 0 ] && [ -z "${CFG_DIR}" ]; then
-		CFG_DIR="/etc/conf.d/kvm."
-	fi
+	# get VM_NAME
+	VM_NAME="$(_define_vm ${1})"
 
-	if ! [ -f ${vm_config_file} ]; then
+	# find out which file to source
+	local vm_config_file="${1}"
+	if ! [ -f "${vm_config_file}" ]; then
 		if [ -f "${CFG_DIR}${vm_config_file}" ]; then
-			vmname="${vm_config_file}"
 			vm_config_file="${CFG_DIR}${vm_config_file}"
 		else
-			echo "config file \"${CFG_DIR}${vm_config_file}\" not found."
+			echo "Config file \"${CFG_DIR}${vm_config_file}\" not found." | (logerr)
 			exit 1
 		fi
-	else
-		if [ "${_vm_config_file}" = "/etc/conf.d/kvm.${_vm_config_file##*.}" ]; then
-			vmname="${_vm_config_file##*.}"
-		else
-			vmname="${_vm_config_file##*/}"
-		fi
 	fi
-
-	local myconfig=$(${QEMUCC} --checkandcreate ${vm_config_file})
-	# password are only returned if remote access is enabled
-	local vm_spice_pw=$(${QEMUCC} -s ${vm_config_file})
-	local vm_vnc_pw=$(${QEMUCC} -v ${vm_config_file})
-
-	# if ${myconfig} is empty something went wrong
-	if [ -z "${myconfig}" ]; then
-		echo "Something went wrong while creating the vm-config. Please check previous message(s)"
-		exit 1
-	fi
-
 	# Start the Virtual Machine
-	echo "Starting ${vmname}..."
+	echo "Starting ${VM_NAME} ..." | (loginfo)
 
-	#
-	# start guest with /bin/sh, otherwise qemu breaks with
-	# multiple append statements (probably a bug)
-	#
-	#DISPLAY=:0 XAUTHORITY=/home/${user}/.Xauthority \
-	/bin/sh -c "TMPDIR=${TMP_DIR} ${myconfig} >/dev/null"
+	source ${vm_config_file}
+	# default message
+	DEFAULT_MSG="Please check your config (${vm_config_file})"
 
-	# remove tap devices if the guest system couldn't be started
-	if [ "$?" != "0" ]; then
-		# only root can remove tap interfaces
-		if [ $(id -u) = 0 ] && [ -e "${PID_DIR}/${vmname}.net" ]; then
-			echo "Failed to start ${vmname}, removing qtap interfaces"
-			_stop_tap_devices ${vmname}
+	# Test if requested arch is available in qemu
+	# defaulting to system arch
+	[ -z "${VM_ARCH}" ] && VM_ARCH="$(uname -m)"
+	if command -v qemu-system-${VM_ARCH} > /dev/null ; then
+		VM_QEMU_BIN="/usr/bin/qemu-system-${VM_ARCH}"
+	else
+		echo "No support for ${VM_ARCH} available" | (logerr)
+		_dry_run_check || return 1
+	fi
+
+	NET_INT=( )
+	if _cfgcheck; then
+		# create qemu config
+		_myconfig
+
+		if _dry_run_check; then
+			echo "DRYRUN! Exiting now." | (logwarn)
+			exit 1
 		fi
-		exit 1
-	fi
 
-	# set passwords for spice/vnc
-	if [ -n "${vm_spice_pw}" ]; then
-		echo "set_password spice ${vm_spice_pw}" \
-		| ${NC} -U -q1 ${PID_DIR}/${vmname}.sock > /dev/null 2>&1
-	fi
-	if [ -n "${vm_vnc_pw}" ]; then
-		echo "set_password vnc ${vm_vnc_pw}" \
-		| ${NC} -U -q1 ${PID_DIR}/${vmname}.sock > /dev/null 2>&1
+		if [ -n "${NET_INT}" ]; then
+			create_network "$(echo ${NET_INT[@]})"
+		fi
+
+		# TODO: weyland ??
+		#
+		if [ $(id -u) = 0 ] && ${VM_ENABLE_SDL}; then
+			DISPLAY=:0 XAUTHORITY=/home/${VM_USER}/.Xauthority \
+				TMPDIR=${TMP_DIR} ${VM_QEMU_BIN} "${myconfig[@]}" >/dev/null
+		else
+			TMPDIR=${TMP_DIR} ${VM_QEMU_BIN} "${myconfig[@]}" >/dev/null
+		fi
+
+		# remove tap devices if the guest system couldn't be started
+		if [ "$?" != "0" ]; then
+			if [ -e "${PID_DIR}/${VM_NAME}.net" ]; then
+				echo "Failed to start ${VM_NAME}, removing qtap interfaces" | (logerr)
+				delete_network "$(cat "${PID_DIR}/${VM_NAME}.net")"
+			fi
+			exit 1
+		fi
+
+		# set passwords for spice/vnc
+		if [ -n "${spice_password}" ]; then
+			_vm_edit "set_password vnc" ${VM_NAME} ${vnc_password}
+		fi
+		if [ -n "${vnc_password}" ]; then
+			_vm_edit "set_password spice" ${VM_NAME} ${spice_password}
+		fi
+
 	fi
 }
 
@@ -404,26 +951,25 @@ vm_stop(){
 
 	# set default kill wait to 80 seconds
 	[ -z "${VM_KILL_WAIT}" ] && VM_KILL_WAIT=80
-
 	local KVM_PID="$(cat ${PID_DIR}/${vmname}.pid)"
 
 	if (kill -0 ${KVM_PID} >/dev/null 2>&1); then
 
-		echo "Stopping ${vmname}"
+		echo "Stopping ${vmname} ..." | (loginfo)
 		# sending via nc (netcat) the shutdown command
 		echo "system_powerdown" | ${NC} -U -q1 ${PID_DIR}/${vmname}.sock > /dev/null 2>&1
 		# waiting for system to shutdown
-		echo -n "Waiting ${VM_KILL_WAIT} seconds for ${vmname} to shutdown."
+		echo "Waiting ${VM_KILL_WAIT} seconds for ${vmname} to shutdown." | (loginfon)
 		local cnt=0
 		while [ -n "$(ps -p ${KVM_PID} --no-heading)" ]; do
 			cnt=$(expr ${cnt} + 2)
 			if [ ${cnt} -gt ${VM_KILL_WAIT} ]; then
 				echo
-				echo " Failed to shuddown ${vmname}, Guest will be killed."
+				echo "Failed to shuddown ${vmname}, Guest will be killed." | (logwarn)
 				# kill qemu
 				kill -9 ${KVM_PID} > /dev/null 2>&1
 				sleep 1
-				echo " Killed ${vmname}"
+				echo "Killed ${vmname}" | (logwarn)
 				break
 			fi
 			# send system_powerdown every 20 seconds
@@ -435,15 +981,22 @@ vm_stop(){
 		done
 		echo
 	else
-		echo "Couldn't find the process for ${vmname}, guest might already down."
+		echo "Couldn't find the process of ${vmname}, guest might already down." | (logwarn)
 	fi
 
-	_stop_tap_devices ${vmname}
+	if [ -e "${PID_DIR}/${vmname}.net" ]; then
+		if ${TAP_DELETE}; then
+			delete_network "$(cat "${PID_DIR}/${vmname}.net")"
+			rm ${PID_DIR}/${vmname}.net
+		else
+			rm ${PID_DIR}/${vmname}.net
+		fi
+	fi
 
 	# for some reason when running as root qemu doesn't clean up pid/sock files
 	# after we stopped a vm. So lets clean them up manually.
 	if [ $(id -u) = 0 ]; then
-		for f in qga.sock sock pid; do
+		for f in qga.sock sock pid net; do
 			if [ -e "${PID_DIR}/${vmname}.${f}" ]; then
 				rm ${PID_DIR}/${vmname}.${f}
 			fi
@@ -486,54 +1039,54 @@ eval set -- "$OPTS"
 while true; do
 	case "$1" in
 		-b|--boot)
-			case "$2" in
+			case "${2}" in
 				"") shift 2 ;;
-				*) vm_start "$2" ; exit ; shift 2 ;;
+				*) vm_start "${2}" ; exit ; shift 2 ;;
 			esac ;;
 		-s|--stop)
-			case "$2" in
+			case "${2}" in
 				"") shift 2 ;;
-				*) vm_stop "$2" ; exit ; shift 2 ;;
+				*) vm_stop "${2}" ; exit ; shift 2 ;;
 			esac ;;
 		-r|--reboot)
-			case "$2" in
+			case "${2}" in
 				"") shift 2 ;;
-				*) vm_reboot "$2" ; exit ; shift 2 ;;
+				*) vm_reboot "${2}" ; exit ; shift 2 ;;
 			esac ;;
 		-x|--reset)
-			case "$2" in
+			case "${2}" in
 				"") shift 2 ;;
-				*) vm_reset "$2" ; exit ; shift 2 ;;
+				*) vm_reset "${2}" ; exit ; shift 2 ;;
 			esac ;;
 		-f|--freeze)
-			case "$2" in
+			case "${2}" in
 				"") shift 2 ;;
-				*) vm_freeze_thaw "$2" ; exit ; shift 2 ;;
+				*) vm_freeze_thaw "${2}" ; exit ; shift 2 ;;
 			esac ;;
 		-a|--add)
-			case "$2" in
+			case "${2}" in
 				"") shift 2 ;;
-				*) create_network $2 ; exit ; shift 2 ;;
+				*) create_network "${2}" ; exit ; shift 2 ;;
 			esac ;;
 		-d|--delete)
-			case "$2" in
+			case "${2}" in
 				"") shift 2 ;;
-				*) delete_network $2 ; exit ; shift 2 ;;
+				*) delete_network "${2}" ; exit ; shift 2 ;;
 			esac ;;
 		-u|--update)
-			case "$2" in
+			case "${2}" in
 				"") shift 2 ;;
-				*) vm_update $2 ; exit ; shift 2 ;;
+				*) vm_update "${2}" ; exit ; shift 2 ;;
 			esac ;;
 		-l|--list)
-			case "$2" in
+			case "${2}" in
 				"") vm_list ; exit ; shift 2 ;;
-				*) vm_list $2 ; exit ; shift 2 ;;
+				*) vm_list "${2}" ; exit ; shift 2 ;;
 			esac ;;
 		-c|--connect)
-			case "$2" in
+			case "${2}" in
 				"") shift 2 ;;
-				*) vm_connect "$2" ; exit ; shift 2 ;;
+				*) vm_connect "${2}" ; exit ; shift 2 ;;
 			esac ;;
 		-h|--help) usage; shift ;;
 		--) shift ; break ;;

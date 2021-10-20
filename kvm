@@ -1,0 +1,2 @@
+# change default vm configuration path
+#CONF_PATH="/etc/qvm2"
