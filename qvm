@@ -694,13 +694,12 @@ vm_list() {
 }
 
 vm_update() {
-	local args=${1}
-	local _vm="$(echo ${args}|cut -d',' -f1)"
-	local _setting="$(echo ${args}|cut -sd',' -f2)"
-	local _value="$(echo ${args}|cut -sd',' -f3)"
+	local _vm="${1}"
+	local _setting="${2}"
+	local _value="${3}"
 
 	if [ -z "${_vm}" ] || [ -z "${_setting}" ] || [ -z "${_value}" ]; then
-		echo "missing var: please make sure you passed vmname,setting,value. see: qvm -h"
+		echo "missing var: please make sure you passed vmname,setting,value. see: qvm help"
 		exit 1
 	fi
 
@@ -709,7 +708,7 @@ vm_update() {
 
 	case ${_setting} in
 		mem|memory)
-			echo "Changing Memory to ${_mem}MB for ${_vm}" | (loginfo)
+			echo "Changing Memory to ${_value}MB for ${_vm}" | (loginfo)
 			_vm_edit balloon ${vmname} ${_value}
 			;;
 		key|sendkey)
@@ -727,12 +726,35 @@ vm_update() {
 	esac
 }
 
+host_network(){
+	local _function="${1}"
+	local _name="${2}"
+	local _bridge="${3}"
+
+	case ${_function} in
+		add)
+			if [ -z "${_name}" ] || [ -z "${_bridge}" ]; then
+				echo "missing var: please make sure you passed name and bridge. see: qvm help"
+				exit 1
+			fi
+			create_network "${3},${2}"
+			;;
+		del)
+			if [ -z "${_name}" ]; then
+				echo "missing var: please make sure you passed name. see: qvm help"
+				exit 1
+			fi
+			delete_network "${2}"
+			;;
+	esac
+}
+
 create_network() {
 	local allint="${1}"
 	local singleint
 
 	if [ -z "${allint}" ]; then
-		echo "Missing argument. Please make sure you passed the tap name. see: qvm -h" | (logerr)
+		echo "Missing argument. Please make sure you passed the tap name. see: qvm help" | (logerr)
 		exit 1
 	fi
 
@@ -744,7 +766,7 @@ create_network() {
 		local _name="${singleint##*,}"
 
 		if [ -z "${_type}" ] || [ -z "${_name}" ]; then
-			echo "Missing variable: please make sure you passed type,name. see: qvm -h" | (logerr)
+			echo "Missing variable: please make sure you passed type,name. see: qvm help" | (logerr)
 			exit 1
 		fi
 
@@ -781,7 +803,7 @@ delete_network() {
 	local singleint
 
 	if [ -z "${allint}" ]; then
-		echo "Missing argument. Please make sure you passed the tap name. see: qvm -h" | (logerr)
+		echo "Missing argument. Please make sure you passed the tap name. see: qvm help" | (logerr)
 		exit 1
 	fi
 
@@ -994,6 +1016,7 @@ vm_stop(){
 		echo "Couldn't find the process of ${vmname}, guest might already down." | (logwarn)
 	fi
 
+
 	if [ -e "${PID_DIR}/${vmname}.net" ]; then
 		if ${TAP_DELETE}; then
 			delete_network "$(cat "${PID_DIR}/${vmname}.net")"
@@ -1013,52 +1036,49 @@ usage() {
 	echo -e "start/stop and manipulating qemu vms"
 	echo
 	echo -e "guest start/stopping"
-	echo -e "qvm -b|-s|-r|-x|-f|-l vmname|/path/to/configfile"
-	echo -e "qvm -b|--boot\t\t\tboot virtual machine config file"
-	echo -e "qvm -s|--stop\t\t\tstop virtual machine"
-	echo -e "qvm -r|--reboot\t\t\trestart virtual machine (via qemu guest agent)"
-	echo -e "qvm -x|--reset\t\t\treset virtual machine"
-	echo -e "qvm -f|--freeze\t\t\tfreeze|unfreeze guest filesystem (via qemu guest agent)"
-	echo -e "qvm -l|--list\t\t\tlist all virtual machines|show details of [vmname]"
+	echo -e "qvm b|s|r|x|f|l|c vmname|/path/to/configfile"
+	echo -e "qvm b|boot\t\t\tboot virtual machine config file"
+	echo -e "qvm s|stop\t\t\tstop virtual machine"
+	echo -e "qvm r|reboot\t\t\trestart virtual machine (via qemu guest agent)"
+	echo -e "qvm x|reset\t\t\treset virtual machine"
+	echo -e "qvm f|freeze\t\t\tfreeze|unfreeze guest filesystem (via qemu guest agent)"
+	echo -e "qvm l|list\t\t\tlist all virtual machines|show details of [vmname]"
+	echo -e "qvm c|connect\t\t\tconnect to the unix socket of [vmname]"
 	echo
 	echo -e "guest modify"
-	echo -e "qvm -c|-u vmname[,mem|key|vnc],value"
-	echo -e " -u vmname,mem,4096\t\tchange the memory of [vmname] via ballooing"
-	echo -e " -u vmname,key,ctrl-alt-f1\tsend key combination to [vmname] (like ctrl-alt-f1)"
-	echo -e " -u vmname,vnc|spice,P4ssw0rd\tchange vnc or spice password of [vmname]"
-	echo -e "qvm -c|--connect vmname\t\tconnect to the unix socket of [vmname]"
+	echo -e "qvm update vmname memory|sendkey|[spice|vnc] value"
+	echo -e " update vmname mem 4096\t\tchange the memory of [vmname] via ballooing"
+	echo -e " update vmname key ctrl-alt-f1\tsend key combination to [vmname] (like ctrl-alt-f1)"
+	echo -e " update vmname vnc|spice P4ssw0rd\tchange vnc or spice password of [vmname]"
 	echo
 	echo -e "host network"
-	echo -e "qvm -a|-d [bridge-dev(br0),]tap-name(q1tap1)"
-	echo -e "qvm -a|--add\t\t\tcreate a new tap device and link it to [bridge-dev]"
-	echo -e "qvm -d|--delete\t\t\tremove a tap device"
+	echo -e "qvm network add|del tap-name,[bridge-dev(br0)]"
+	echo -e " network add\t\t\tcreate a new tap device and link it to [bridge-dev]"
+	echo -e " network del\t\t\tremove a tap device"
 }
 
 # start of the script
 if [ $# -lt 1 ]; then usage; exit; fi
 
 case "${1}" in
-	-b|boot)
-		if [ -n "${2}" ]; then vm_start "${2}"; exit; else usage; fi ;;
-	-s|stop)
-		if [ -n "${2}" ]; then vm_stop "${2}"; exit; else usage; fi ;;
-	-r|reboot)
-		if [ -n "${2}" ]; then vm_reboot "${2}"; exit; else usage; fi ;;
-	-x|reset)
-		if [ -n "${2}" ]; then vm_reset "${2}"; exit; else usage; fi ;;
-	-f|freeze)
-		if [ -n "${2}" ]; then vm_freeze_thaw "${2}"; exit; else usage; fi ;;
-	-a|add)
-		if [ -n "${2}" ]; then create_network "${2}"; exit; else usage; fi ;;
-	-d|delete)
-		if [ -n "${2}" ]; then delete_network "${2}"; exit; else usage; fi ;;
-	-u|update)
-		if [ -n "${2}" ]; then vm_update "${2}"; exit; else usage; fi ;;
-	-c|connect)
-		if [ -n "${2}" ]; then vm_connect "${2}"; exit; else usage; fi ;;
-	-l|list)
-		if [ -n "${2}" ]; then vm_connect "${2}"; exit; else vm_list; exit; fi ;;
-	-h|help) usage; shift ;;
-	--) shift ; break ;;
-	*) echo "Internal error!"; exit 1 ;;
+	b|boot)
+	 if [ -n "${2}" ]; then vm_start "${2}"; exit; else usage; fi ;;
+	s|stop)
+	 if [ -n "${2}" ]; then vm_stop "${2}"; exit; else usage; fi ;;
+	r|reboot)
+	 if [ -n "${2}" ]; then vm_reboot "${2}"; exit; else usage; fi ;;
+	x|reset)
+	 if [ -n "${2}" ]; then vm_reset "${2}"; exit; else usage; fi ;;
+	f|freeze)
+	 if [ -n "${2}" ]; then vm_freeze_thaw "${2}"; exit; else usage; fi ;;
+	n|network)
+	 if [ -n "${2}" ]; then host_network "${2}" "${3}" "${4}"; exit; else usage; fi ;;
+	u|update)
+	 if [ -n "${2}" ]; then vm_update "${2}" "${3}" "${4}"; exit; else usage; fi ;;
+	c|connect)
+	 if [ -n "${2}" ]; then vm_connect "${2}"; exit; else usage; fi ;;
+	l|list)
+	 if [ -n "${2}" ]; then vm_list "${2}"; exit; else vm_list; exit; fi ;;
+	h|help) usage ;;
+	*) echo "Unknown command"; exit 1 ;;
 esac
