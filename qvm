@@ -949,6 +949,14 @@ vm_stop(){
 	local vmname=$(_define_vm ${1})
 	_check_running_vm ${vmname} || exit 1
 
+	_cleanup(){
+		for f in qga.sock sock pid; do
+			if [ -e "${PID_DIR}/${vmname}.${f}" ]; then
+				rm ${PID_DIR}/${vmname}.${f}
+			fi
+		done
+	}
+
 	# set default kill wait to 80 seconds
 	[ -z "${VM_KILL_WAIT}" ] && VM_KILL_WAIT=80
 	local KVM_PID="$(cat ${PID_DIR}/${vmname}.pid)"
@@ -970,6 +978,8 @@ vm_stop(){
 				kill -9 ${KVM_PID} > /dev/null 2>&1
 				sleep 1
 				echo "Killed ${vmname}" | (logwarn)
+				# we need to cleanup manually in case the vm got killed
+				_cleanup
 				break
 			fi
 			# send system_powerdown every 20 seconds
@@ -995,13 +1005,7 @@ vm_stop(){
 
 	# for some reason when running as root qemu doesn't clean up pid/sock files
 	# after we stopped a vm. So lets clean them up manually.
-	if [ $(id -u) = 0 ]; then
-		for f in qga.sock sock pid net; do
-			if [ -e "${PID_DIR}/${vmname}.${f}" ]; then
-				rm ${PID_DIR}/${vmname}.${f}
-			fi
-		done
-	fi
+	[ $(id -u) = 0 ] && _cleanup
 }
 
 usage() {
@@ -1033,63 +1037,28 @@ usage() {
 # start of the script
 if [ $# -lt 1 ]; then usage; exit; fi
 
-OPTS=$(getopt -o b:s:r:x:f:a:d:l::u:c:h --long boot:,stop:,reboot:,reset:,freeze:,add:,delete:,list::,update:,connect:,help -n 'qvm' -- "$@")
-eval set -- "$OPTS"
-
-while true; do
-	case "$1" in
-		-b|--boot)
-			case "${2}" in
-				"") shift 2 ;;
-				*) vm_start "${2}" ; exit ; shift 2 ;;
-			esac ;;
-		-s|--stop)
-			case "${2}" in
-				"") shift 2 ;;
-				*) vm_stop "${2}" ; exit ; shift 2 ;;
-			esac ;;
-		-r|--reboot)
-			case "${2}" in
-				"") shift 2 ;;
-				*) vm_reboot "${2}" ; exit ; shift 2 ;;
-			esac ;;
-		-x|--reset)
-			case "${2}" in
-				"") shift 2 ;;
-				*) vm_reset "${2}" ; exit ; shift 2 ;;
-			esac ;;
-		-f|--freeze)
-			case "${2}" in
-				"") shift 2 ;;
-				*) vm_freeze_thaw "${2}" ; exit ; shift 2 ;;
-			esac ;;
-		-a|--add)
-			case "${2}" in
-				"") shift 2 ;;
-				*) create_network "${2}" ; exit ; shift 2 ;;
-			esac ;;
-		-d|--delete)
-			case "${2}" in
-				"") shift 2 ;;
-				*) delete_network "${2}" ; exit ; shift 2 ;;
-			esac ;;
-		-u|--update)
-			case "${2}" in
-				"") shift 2 ;;
-				*) vm_update "${2}" ; exit ; shift 2 ;;
-			esac ;;
-		-l|--list)
-			case "${2}" in
-				"") vm_list ; exit ; shift 2 ;;
-				*) vm_list "${2}" ; exit ; shift 2 ;;
-			esac ;;
-		-c|--connect)
-			case "${2}" in
-				"") shift 2 ;;
-				*) vm_connect "${2}" ; exit ; shift 2 ;;
-			esac ;;
-		-h|--help) usage; shift ;;
-		--) shift ; break ;;
-		*) echo "Internal error!"; exit 1 ;;
-	esac
-done
+case "${1}" in
+	-b|boot)
+		if [ -n "${2}" ]; then vm_start "${2}"; exit; else usage; fi ;;
+	-s|stop)
+		if [ -n "${2}" ]; then vm_stop "${2}"; exit; else usage; fi ;;
+	-r|reboot)
+		if [ -n "${2}" ]; then vm_reboot "${2}"; exit; else usage; fi ;;
+	-x|reset)
+		if [ -n "${2}" ]; then vm_reset "${2}"; exit; else usage; fi ;;
+	-f|freeze)
+		if [ -n "${2}" ]; then vm_freeze_thaw "${2}"; exit; else usage; fi ;;
+	-a|add)
+		if [ -n "${2}" ]; then create_network "${2}"; exit; else usage; fi ;;
+	-d|delete)
+		if [ -n "${2}" ]; then delete_network "${2}"; exit; else usage; fi ;;
+	-u|update)
+		if [ -n "${2}" ]; then vm_update "${2}"; exit; else usage; fi ;;
+	-c|connect)
+		if [ -n "${2}" ]; then vm_connect "${2}"; exit; else usage; fi ;;
+	-l|list)
+		if [ -n "${2}" ]; then vm_connect "${2}"; exit; else vm_list; exit; fi ;;
+	-h|help) usage; shift ;;
+	--) shift ; break ;;
+	*) echo "Internal error!"; exit 1 ;;
+esac
