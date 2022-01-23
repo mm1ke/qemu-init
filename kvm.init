@@ -40,21 +40,21 @@ depend(){
 }
 
 reboot(){
-	${command} -r ${VMPATH}
+	${command} reboot ${VMPATH}
 	eend $?
 }
 
 reset(){
-	${command} -x ${VMPATH}
+	${command} reset ${VMPATH}
 	eend $?
 }
 
 start(){
-	${command} -b ${VMPATH}
+	${command} start ${VMPATH}
 	eend $?
 }
 
 stop(){
-	${command} -s ${VMPATH}
+	${command} stop ${VMPATH}
 	eend 0
 }
