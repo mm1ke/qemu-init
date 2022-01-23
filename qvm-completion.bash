@@ -23,20 +23,44 @@
 # Discription:
 # qvm-completion: bash completion for qvm
 
-PID_DIR="/run/kvm"
-if ! [ $(id -u) = 0 ]; then
-	PID_DIR="/run/user/$(id -u)"
-fi
-source ~/.qvm.conf
+function _qvm_comp_list(){
 
-COMP_CMD_UPDATE="
+	local _qvm_comp_cmd_all _qvm_comp_cmd_update
+	local cur prev pid_dir
+
+	function __qvm_comp_with_text(){
+		local OLDIFS="${IFS}"
+		local IFS=$'\n'
+		local completions=($(compgen -W "${1}" -- ${cur}))
+
+		if [[ ${#completions[*]} -eq 1 ]]; then
+			COMPREPLY=( ${completions[0]%% *} )
+		else
+			for i in "${!completions[@]}"; do
+				completions[$i]="$(printf '%*s' "-$COLUMNS" "${completions[$i]}")"
+			done
+			COMPREPLY=("${completions[@]}")
+		fi
+		IFS="${OLDIFS}"
+	}
+
+	if [ ${#COMP_WORDS[@]} -lt 2 ]; then
+		return
+	fi
+
+	local pid_dir="/run/kvm"
+	if ! [ $(id -u) = 0 ]; then
+		local pid_dir="/run/user/$(id -u)"
+	fi
+	source ~/.qvm.conf
+
+	local _qvm_comp_cmd_update="
 memory       change vm memory
 sendkey      send key combinatin to vm
 vnc          change vnc password
-spice        change spice password
-"
+spice        change spice password"
 
-COMP_CMD_ALL="
+	local _qvm_comp_cmd_all="
 boot         boot virtual machine
 stop         shutdown virtual machine
 reboot       reboot virtual machine (via qemu guest agent)
@@ -45,36 +69,15 @@ freeze       freezes/thaws virtual machine (via qemu guest agent)
 list         list all running/stopped virtual machines
 connect      connect to a virtual machine socket
 update       updates certain virtual machine settings
-network      add/removes tap interfaces on the host
-"
+network      add/removes tap interfaces on the host"
 
-function comp_with_text(){
-	local OLDIFS="${IFS}"
-	local IFS=$'\n'
-	local completions=($(compgen -W "${1}" -- ${cur}))
-
-	if [[ ${#completions[*]} -eq 1 ]]; then
-		COMPREPLY=( ${completions[0]%% *} )
-	else
-		for i in "${!completions[@]}"; do
-			completions[$i]="$(printf '%*s' "-$COLUMNS" "${completions[$i]}")"
-		done
-		COMPREPLY=("${completions[@]}")
-	fi
-	IFS="${OLDIFS}"
-}
-
-
-function _list(){
-	local cur prev
 	COMPREPLY=()
-	cur=${COMP_WORDS[COMP_CWORD]}
-	prev=${COMP_WORDS[COMP_CWORD-1]}
+	local cur=${COMP_WORDS[COMP_CWORD]}
+	local prev=${COMP_WORDS[COMP_CWORD-1]}
 
 	case ${COMP_CWORD} in
 		1)
-
-			comp_with_text "${COMP_CMD_ALL}"
+			__qvm_comp_with_text "${_qvm_comp_cmd_all}"
 			;;
 		2)
 			case ${prev} in
@@ -82,7 +85,7 @@ function _list(){
 					COMPREPLY=($(compgen -W "$(find ${CFG_DIR} -type f -printf '%f\n'|sort)" -- ${cur}))
 					;;
 				stop|s|reboot|r|reset|x|freeze|f|list|l|connect|c|update|u)
-					COMPREPLY=($(compgen -W "$(find ${PID_DIR} -name *.pid -printf '%f\n'|rev|cut -d'.' -f2-|rev)" -- ${cur}))
+					COMPREPLY=($(compgen -W "$(find ${pid_dir} -name *.pid -printf '%f\n'|rev|cut -d'.' -f2-|rev)" -- ${cur}))
 					;;
 				network|n)
 					COMPREPLY=($(compgen -W "add del" -- ${cur}))
@@ -100,7 +103,7 @@ function _list(){
 			esac
 			case ${COMP_WORDS[COMP_CWORD-2]} in
 				update|u)
-					comp_with_text "${COMP_CMD_UPDATE}"
+					__qvm_comp_with_text "${_qvm_comp_cmd_update}"
 					;;
 			esac
 			;;
@@ -118,6 +121,7 @@ function _list(){
 			COMPREPLY=()
 			;;
 	esac
+	return 0
 }
 
-complete -F _list qvm
+complete -F _qvm_comp_list qvm
