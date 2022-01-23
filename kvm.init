@@ -50,7 +50,7 @@ reset(){
 }
 
 start(){
-	${command} start ${VMPATH}
+	${command} boot ${VMPATH}
 	eend $?
 }
 

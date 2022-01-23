@@ -600,9 +600,9 @@ _define_vm() {
 
 	# check if passed argument is a file
 	if [ -f ${_vm_arg} ]; then
-		# if it's a file check if it belongs to /etc/conf.d, since those config
+		# if it's a file check if it belongs to /etc/init.d, since those config
 		# files start with "kvm." which need to be removed
-		if [ "${_vm_arg%.*}" = "/etc/conf.d/kvm" ]; then
+		if [ "${_vm_arg%.*}" = "/etc/init.d/kvm" ]; then
 			_vm_name="${_vm_arg##*.}"
 		# otherwise simply remove the path
 		else
@@ -900,6 +900,8 @@ vm_start(){
 	# find out which file to source
 	local vm_config_file="${1}"
 	if ! [ -f "${vm_config_file}" ]; then
+		[ -z "${CONF_PATH}" ] && CONF_PATH="/etc/qvm/"
+		[ -z "${CFG_DIR}" ] && CFG_DIR="${CONF_PATH}"
 		if [ -f "${CFG_DIR}${vm_config_file}" ]; then
 			vm_config_file="${CFG_DIR}${vm_config_file}"
 		else

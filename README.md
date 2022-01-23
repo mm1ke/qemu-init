@@ -1,18 +1,23 @@
 # qemu-init
 
-qemu-init contains scripts for starting, stoping and manipulating qemu virtual machines. It includes 3 scripts and one example configuration file for virtual machines.
+qemu-init contains scripts for starting, stoping and manipulating qemu virtual machines and includes init scripts for `openrc`.
 ### kvm.init
 kvm.init is a openrc init script usually used in gentoo. This can be used to create system services to start virtual machines via openrc.
+### kvm
+kvm is the default configuration file for the `kvm.init` script.
 ### qvm
 qvm is the qemu vm manager for stoping, starting, editing or simply listing virtual machines. It can be run as root and non-root users to play around with virtual machines.
 ### default.config
-default.config shows an example configuration used for **kvm.init** and **qvm**. It also includes comments and sane default in order to quickly setup any virtual machine.
+default.config shows an example configuration used for **kvm.init** and **qvm**. It also includes comments and sane defaults in order to quickly setup any virtual machine.
+### qvm-completion.bash
+this file contains a completion script for qvm.
 
 ## Installation
-In order to use these script simply copy **qvm** into `/usr/bin/`. If you're using the openrc init system and want to start vms as a service simply put **kvm.init** into `/etc/init.d/` and symlink vm configurations to it. configuration files need to be in `/etc/conf.d`.
+In order to use these script simply copy **qvm** into `/usr/bin/`. If you're using the openrc init system and want to start vms as a service simply put **kvm.init** into `/etc/init.d/` and symlink vms to it. configuration files need to be in `CONF_PATH` (default is /etc/qvm/), which is set in `/etc/conf.d/kvm`.
 For example:  
 `cp kvm.init /etc/init.d/`  
-`cp default.config /etc/conf.d/kvm.windows`  
+`cp kvm /etc/conf.d/`  
+`cp default.config /etc/qvm/kvm.windows`  
 `cd /etc/init.d/`  
 `ln -s kvm.init kvm.windows`  
 
