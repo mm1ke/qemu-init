@@ -699,7 +699,7 @@ vm_update() {
 	local _value="${3}"
 
 	if [ -z "${_vm}" ] || [ -z "${_setting}" ] || [ -z "${_value}" ]; then
-		echo "missing var: please make sure you passed vmname,setting,value. see: qvm help"
+		echo "missing var: please make sure you passed [vmname] [setting] [value]. see: qvm help"
 		exit 1
 	fi
 
@@ -872,7 +872,7 @@ vm_connect(){
 	echo "Connecting to socket ${PID_DIR}/${vmname}.sock"
 	echo "Use CTRL+D to detach from the socket"
 	echo
-	${NC} -U -q1 ${PID_DIR}/${vmname}.sock > /dev/null 2>&1
+	${NC} -U -q1 ${PID_DIR}/${vmname}.sock
 }
 
 vm_freeze_thaw(){
@@ -1060,25 +1060,23 @@ usage() {
 # start of the script
 if [ $# -lt 1 ]; then usage; exit; fi
 
-case "${1}" in
-	b|boot)
-	 if [ -n "${2}" ]; then vm_start "${2}"; exit; else usage; fi ;;
-	s|stop)
-	 if [ -n "${2}" ]; then vm_stop "${2}"; exit; else usage; fi ;;
-	r|reboot)
-	 if [ -n "${2}" ]; then vm_reboot "${2}"; exit; else usage; fi ;;
-	x|reset)
-	 if [ -n "${2}" ]; then vm_reset "${2}"; exit; else usage; fi ;;
-	f|freeze)
-	 if [ -n "${2}" ]; then vm_freeze_thaw "${2}"; exit; else usage; fi ;;
-	n|network)
-	 if [ -n "${2}" ]; then host_network "${2}" "${3}" "${4}"; exit; else usage; fi ;;
-	u|update)
-	 if [ -n "${2}" ]; then vm_update "${2}" "${3}" "${4}"; exit; else usage; fi ;;
-	c|connect)
-	 if [ -n "${2}" ]; then vm_connect "${2}"; exit; else usage; fi ;;
-	l|list)
-	 if [ -n "${2}" ]; then vm_list "${2}"; exit; else vm_list; exit; fi ;;
-	h|help) usage ;;
-	*) echo "Unknown command"; exit 1 ;;
-esac
+if [ -z "${2}" ]; then
+	case "${1}" in
+		l|list) vm_list ;;
+		h|help) usage ;;
+		*) echo "Unknown command"; exit 1 ;;
+	esac
+else
+	case "${1}" in
+		b|boot) vm_start "${2}" ;;
+		s|stop) vm_stop "${2}" ;;
+		r|reboot) vm_reboot "${2}" ;;
+		x|reset) vm_reset "${2}" ;;
+		f|freeze) vm_freeze_thaw "${2}" ;;
+		n|network) host_network "${2}" "${3}" "${4}" ;;
+		u|update) vm_update "${2}" "${3}" "${4}" ;;
+		c|connect) vm_connect "${2}" ;;
+		l|list) vm_list "${2}" ;;
+		*) echo "Unknown command"; exit 1 ;;
+	esac
+fi
