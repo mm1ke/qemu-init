@@ -128,7 +128,7 @@ _cfg_network_check(){
 		if [ -z "${net_mac}" ]; then
 			local _random_mac=true
 			# set random mac address
-			net_mac="$(printf 'AA:6E:17:00:%02X:%02X\n' \
+			net_mac="$(printf '56:6E:17:00:%02X:%02X\n' \
 				$(($(dd if=/dev/urandom count=1 2> /dev/null | cksum | cut -d' ' -f1) % 256)) \
 				$(($(dd if=/dev/urandom count=1 2> /dev/null | cksum | cut -d' ' -f1) % 256)))"
 		fi
