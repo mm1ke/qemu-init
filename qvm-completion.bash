@@ -52,7 +52,7 @@ function _qvm_comp_list(){
 	if ! [ $(id -u) = 0 ]; then
 		local pid_dir="/run/user/$(id -u)"
 	fi
-	source ~/.qvm.conf
+	[ -e ~/.qvm.conf ] && source ~/.qvm.conf
 
 	local _qvm_comp_cmd_update="
 memory       change vm memory
@@ -82,7 +82,11 @@ network      add/removes tap interfaces on the host"
 		2)
 			case ${prev} in
 				boot|b)
-					COMPREPLY=($(compgen -W "$(find ${CFG_DIR} -type f -printf '%f\n'|sort)" -- ${cur}))
+					if [ -n ${CFG_DIR} ]; then
+						COMPREPLY=($(compgen -W "$(find ${CFG_DIR} -type f -printf '%f\n'|sort)" -- ${cur}))
+					else
+						COMPREPLY=($(compgen -W "$(find /etc/init.d/kvm.* -type l -printf '%f\n'|sort)" -- ${cur}))
+					fi
 					;;
 				stop|s|reboot|r|reset|x|freeze|f|list|l|connect|c|update|u)
 					COMPREPLY=($(compgen -W "$(find ${pid_dir} -name *.pid -printf '%f\n'|rev|cut -d'.' -f2-|rev)" -- ${cur}))
