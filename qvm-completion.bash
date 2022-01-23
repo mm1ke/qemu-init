@@ -83,9 +83,11 @@ network      add/removes tap interfaces on the host"
 			case ${prev} in
 				boot|b)
 					if [ -n "${CFG_DIR}" ]; then
-						COMPREPLY=($(compgen -W "$(find ${CFG_DIR} -type f -printf '%f\n'|sort)" -- ${cur}))
+						local _vms="$(find ${CFG_DIR} -type f -printf '%f\n'|sort)"
+						__qvm_comp_with_text "$(find ${CFG_DIR} -type f -printf '%f\n'|sort)"
 					else
-						COMPREPLY=($(compgen -W "$(find /etc/init.d/kvm.* -type l -printf '%f\n'|cut -d'.' -f2-|sort)" -- ${cur}))
+
+						__qvm_comp_with_text "$(find /etc/init.d/kvm.* -type l -printf '%f\n'|cut -d'.' -f2-|sort)"
 					fi
 					;;
 				stop|s|reboot|r|reset|x|freeze|f|list|l|connect|c|update|u)
