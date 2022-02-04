@@ -17,8 +17,8 @@ In order to use these script simply copy **qvm** into `/usr/bin/`. If you're usi
 For example:  
 `cp kvm.init /etc/init.d/`  
 `cp kvm.confd /etc/conf.d/kvm`  
-`cp qvm /usr/bin/`
-`chmod +x /usr/bin/qvm`
+`cp qvm /usr/bin/`  
+`chmod +x /usr/bin/qvm`  
 `cp default.config /etc/qvm/kvm.windows`  
 `cd /etc/init.d/`  
 `ln -s kvm.init kvm.windows`  
