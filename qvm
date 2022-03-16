@@ -953,7 +953,7 @@ vm_start(){
 		if [ "$?" != "0" ]; then
 			if [ -e "${PID_DIR}/${VM_NAME}.net" ]; then
 				echo "Failed to start ${VM_NAME}, removing qtap interfaces" | (logerr)
-				delete_network "$(cat "${PID_DIR}/${VM_NAME}.net")"
+				delete_network "$(< ${PID_DIR}/${VM_NAME}.net)"
 			fi
 			exit 1
 		fi
@@ -983,7 +983,7 @@ vm_stop(){
 
 	# set default kill wait to 80 seconds
 	[ -z "${VM_KILL_WAIT}" ] && VM_KILL_WAIT=80
-	local KVM_PID="$(cat ${PID_DIR}/${vmname}.pid)"
+	local KVM_PID="$(< ${PID_DIR}/${vmname}.pid)"
 
 	if (kill -0 ${KVM_PID} >/dev/null 2>&1); then
 
@@ -1021,7 +1021,7 @@ vm_stop(){
 
 	if [ -e "${PID_DIR}/${vmname}.net" ]; then
 		if ${TAP_DELETE}; then
-			delete_network "$(cat "${PID_DIR}/${vmname}.net")"
+			delete_network "$(< ${PID_DIR}/${vmname}.net)"
 			rm ${PID_DIR}/${vmname}.net
 		else
 			rm ${PID_DIR}/${vmname}.net
