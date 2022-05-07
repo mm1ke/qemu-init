@@ -1,5 +1,3 @@
-#/usr/bin/env #!/bin/bash
-
 # Filename: qvm-completion.bash
 # Autor: Michael Mair-Keimberger (mmk AT levelnine DOT at)
 # Date: 23.01.2022
