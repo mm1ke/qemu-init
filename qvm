@@ -78,8 +78,23 @@ _vm_edit(){
 	local _cmd=$1
 	local _vm=$2
 	local _value=$3
+	local _output
 
-	echo "${_cmd} ${_value}" | ${NC} -U -q1 ${PID_DIR}/${_vm}.sock > /dev/null 2>&1
+	_output="$(echo "${_cmd} ${_value}" | ${NC} -U -q1 ${PID_DIR}/${_vm}.sock)"
+	# catch some errors and print them
+	if $(echo ${_output}|grep -q "Migration is disabled"); then
+		echo "${_output}" | head -n+3 | tail -n1 | (logerr)
+	fi
+}
+
+_vm_edit_snapshot_output(){
+	local _cmd=$1
+	local _vm=$2
+	local _value=$3
+	local _output
+
+	_output="$(echo "${_cmd} ${_value}" | ${NC} -U -q1 ${PID_DIR}/${_vm}.sock)"
+	echo "${_output}"|tail -n+4|head -n-1
 }
 
 _check_remote_access_port(){
@@ -726,6 +741,53 @@ vm_update() {
 	esac
 }
 
+vm_snapshot() {
+	local _vm="${1}"
+	local _setting="${2}" # create | delete | list | load
+	local _value="${3}" # optional
+
+	if [ -z "${_vm}" ] || [ -z "${_setting}" ]; then
+		echo "missing var: please make sure you passed at least [vmname] and [setting]. see: qvm help"
+		exit 1
+	fi
+
+	local vmname=$(_define_vm ${_vm})
+	_check_running_vm ${vmname} || exit 1
+
+	case ${_setting} in
+		create)
+			if [ -n "${_value}" ]; then
+				echo "Creating snapshot ${_value} for ${_vm}" | (loginfo)
+			else
+				echo "Creating snapshot with default tag for ${_vm}" | (loginfo)
+			fi
+			_vm_edit savevm ${vmname} ${_value}
+			;;
+		delete)
+			if [ -z "${_value}" ]; then
+				echo "missing snapshot tag. see: qvm help"
+				exit 1
+			else
+				echo "Deleting snapshot: ${_value}" | (loginfo)
+				_vm_edit delvm ${vmname} ${_value}
+			fi
+			;;
+		list)
+			echo "Listing available snapshots of ${_vm}"
+			_vm_edit_snapshot_output "info snapshots" ${vmname}
+			;;
+		load)
+			if [ -z "${_value}" ]; then
+				echo "missing snapshot tag. see: qvm help"
+				exit 1
+			else
+				echo "loading snapshot: ${_value}" | (loginfo)
+				_vm_edit loadvm ${vmname} ${_value}
+			fi
+			;;
+	esac
+}
+
 host_network(){
 	local _function="${1}"
 	local _name="${2}"
@@ -893,6 +955,24 @@ vm_freeze_thaw(){
 	fi
 }
 
+vm_pause(){
+	local vmname=$(_define_vm ${1})
+	_check_running_vm ${vmname} || exit 1
+
+	local vm_status="$(echo "info status" | ${NC} -U -q1 ${PID_DIR}/${vmname}.sock)"
+	vm_status="$(echo "${vm_status}"|tail -n+3|head -n-1|cut -d' ' -f3)"
+
+	if $(echo "${vm_status}"|grep -q "running"); then
+		echo "stopping emulation"
+		echo "s" | ${NC} -U -q1 ${PID_DIR}/${vmname}.sock > /dev/null 2>&1
+	elif $(echo "${vm_status}"|grep -q "paused"); then
+		echo "resume emulation"
+		echo "c" | ${NC} -U -q1 ${PID_DIR}/${vmname}.sock > /dev/null 2>&1
+	else
+		echo "Unknow system status: ${vm_status}"
+	fi
+}
+
 vm_start(){
 	# get VM_NAME
 	VM_NAME="$(_define_vm ${1})"
@@ -1038,25 +1118,33 @@ usage() {
 	echo -e "start/stop and manipulating qemu vms"
 	echo
 	echo -e "guest start/stopping"
-	echo -e "qvm b|s|r|x|f|l|c vmname|/path/to/configfile"
-	echo -e "qvm b|boot\t\t\tboot virtual machine config file"
-	echo -e "qvm s|stop\t\t\tstop virtual machine"
-	echo -e "qvm r|reboot\t\t\trestart virtual machine (via qemu guest agent)"
-	echo -e "qvm x|reset\t\t\treset virtual machine"
-	echo -e "qvm f|freeze\t\t\tfreeze|unfreeze guest filesystem (via qemu guest agent)"
-	echo -e "qvm l|list\t\t\tlist all virtual machines|show details of [vmname]"
-	echo -e "qvm c|connect\t\t\tconnect to the unix socket of [vmname]"
+	echo -e "qvm b|s|r|x|f|l|c|p vmname|/path/to/configfile"
+	echo -e " b|boot\t\t\tboot virtual machine config file"
+	echo -e " s|stop\t\t\tstop virtual machine"
+	echo -e " r|reboot\t\trestart virtual machine (via qemu guest agent)"
+	echo -e " x|reset\t\treset virtual machine"
+	echo -e " f|freeze\t\tfreeze|unfreeze guest filesystem (via qemu guest agent)"
+	echo -e " l|list\t\t\tlist all virtual machines|show details of [vmname]"
+	echo -e " c|connect\t\tconnect to the unix socket of [vmname]"
+	echo -e " p|pause\t\tpause/unpause qemu virtualization"
 	echo
-	echo -e "guest modify"
+	echo -e "vm/guest modify"
 	echo -e "qvm update vmname memory|sendkey|[spice|vnc] value"
-	echo -e " update vmname mem 4096\t\tchange the memory of [vmname] via ballooing"
-	echo -e " update vmname key ctrl-alt-f1\tsend key combination to [vmname] (like ctrl-alt-f1)"
-	echo -e " update vmname vnc|spice P4ssw0rd\tchange vnc or spice password of [vmname]"
+	echo -e " memory 4096\t\tchange the memory of [vmname] via ballooing"
+	echo -e " sendkey ctrl-alt-f1\tsend key combination to [vmname] (like ctrl-alt-f1)"
+	echo -e " vnc|spice P4ssw0rd\tchange vnc or spice password of [vmname]"
+	echo
+	echo -e "vm/guest snapshoting"
+	echo -e "qvm snapshot vmname create|delete|info|load [value]"
+	echo -e " create [value]\t\tcreate a new snapshot called [value(optional)]"
+	echo -e " delete [value]\t\tdelete snapshot [value]"
+	echo -e " snapshot list\t\tlist available snapshots"
+	echo -e " load [value]\t\tload snapshot [value]"
 	echo
 	echo -e "host network"
 	echo -e "qvm network add|del tap-name,[bridge-dev(br0)]"
-	echo -e " network add\t\t\tcreate a new tap device and link it to [bridge-dev]"
-	echo -e " network del\t\t\tremove a tap device"
+	echo -e " add\t\t\tcreate a new tap device and link it to [bridge-dev]"
+	echo -e " del\t\t\tremove a tap device"
 }
 
 # start of the script
@@ -1075,10 +1163,12 @@ else
 		r|reboot) vm_reboot "${2}" ;;
 		x|reset) vm_reset "${2}" ;;
 		f|freeze) vm_freeze_thaw "${2}" ;;
+		p|pause) vm_pause "${2}" ;;
 		n|network) host_network "${2}" "${3}" "${4}" ;;
 		u|update) vm_update "${2}" "${3}" "${4}" ;;
 		c|connect) vm_connect "${2}" ;;
 		l|list) vm_list "${2}" ;;
+		e|snapshot) vm_snapshot "${2}" "${3}" "${4}" ;;
 		*) echo "Unknown command"; exit 1 ;;
 	esac
 fi

@@ -23,7 +23,7 @@
 
 function _qvm_comp_list(){
 
-	local _qvm_comp_cmd_all _qvm_comp_cmd_update
+	local _qvm_comp_cmd_all _qvm_comp_cmd_update _qvm_comp_cmd_snapshot
 	local cur prev pid_dir
 
 	function __qvm_comp_with_text(){
@@ -58,16 +58,24 @@ sendkey      send key combinatin to vm
 vnc          change vnc password
 spice        change spice password"
 
+	local _qvm_comp_cmd_snapshot="
+create       create a new snapshot
+delete       delete existing snapshot
+list         list available snapshots
+load         load a specifig snapshot"
+
 	local _qvm_comp_cmd_all="
 boot         boot virtual machine
 stop         shutdown virtual machine
 reboot       reboot virtual machine (via qemu guest agent)
 reset        resets virtual machine
 freeze       freezes/thaws virtual machine (via qemu guest agent)
+pause        pause/unpause guest emulation
 list         list all running/stopped virtual machines
 connect      connect to a virtual machine socket
 update       updates certain virtual machine settings
-network      add/removes tap interfaces on the host"
+network      add/removes tap interfaces on the host
+snapshot     create/delete/load/list available snapshots"
 
 	COMPREPLY=()
 	local cur=${COMP_WORDS[COMP_CWORD]}
@@ -88,7 +96,7 @@ network      add/removes tap interfaces on the host"
 						__qvm_comp_with_text "$(find /etc/init.d/kvm.* -type l -printf '%f\n'|cut -d'.' -f2-|sort)"
 					fi
 					;;
-				stop|s|reboot|r|reset|x|freeze|f|list|l|connect|c|update|u)
+				stop|s|reboot|r|reset|x|freeze|f|list|l|connect|c|update|u|snapshot|e|pause|p)
 					COMPREPLY=($(compgen -W "$(find ${pid_dir} -name *.pid -printf '%f\n'|rev|cut -d'.' -f2-|rev)" -- ${cur}))
 					;;
 				network|n)
@@ -109,6 +117,9 @@ network      add/removes tap interfaces on the host"
 				update|u)
 					__qvm_comp_with_text "${_qvm_comp_cmd_update}"
 					;;
+				snapshot|e)
+					__qvm_comp_with_text "${_qvm_comp_cmd_snapshot}"
+					;;
 			esac
 			;;
 		4)
@@ -118,6 +129,20 @@ network      add/removes tap interfaces on the host"
 					;;
 				key|sendkey)
 					COMPREPLY=($(compgen -W "ctrl-alt-f1 ctrl-alt-f7 ctrl-alt-delete" -- ${cur}))
+					;;
+				delete)
+					local snapshots="$(echo "info snapshots" \
+						| nc -U -q1 /run/user/$(id -u)/${COMP_WORDS[COMP_CWORD-2]}.sock \
+						| tail -n+5 \
+						| head -n-1 \
+						| tr -s \ '' \
+						| cut -d' ' -f2\
+						| tr '\n' ' ')"
+						COMPREPLY=($(compgen -W "$(echo "${snapshots}")" -- ${cur}))
+					;;
+				load)
+					local snapshots="$(echo "info snapshots" | nc -U -q1 /run/user/2000/${COMP_WORDS[COMP_CWORD-2]}.sock)"
+					COMPREPLY=($(compgen -W "$(echo "${snapshots}"|tail -n+5|head -n-1|tr -s \ '' | cut -d' ' -f2|tr '\n' ' ')"))
 					;;
 			esac
 			;;
