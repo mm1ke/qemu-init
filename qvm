@@ -222,6 +222,23 @@ _cfg_network_check(){
 						-device ${net_drv},netdev="${VM_NAME}_${_net_id}",mac=${net_mac}"
 				;;
 
+			bridge)
+				# check bridge device
+				if [ -n "${net_brd}" ]; then
+					if ! [ -d /sys/class/net/${net_brd}/bridge/ ]; then
+						echo "${net_brd} is not a bridge device. ${DEFAULT_MSG}" | (logerr)
+						_dry_run_check || return 1
+					fi
+				else
+					echo "No bridge device setup! ${DEFAULT_MSG}" | (logerr)
+					_dry_run_check || return 1
+				fi
+				VM_NET="${VM_NET} \
+					-netdev bridge,br=${net_brd},id=${VM_NAME}_${_net_id} \
+					-device ${net_drv},netdev=${VM_NAME}_${_net_id}"
+
+				;;
+
 			*)
 				echo "Unknow Network Typ. Network will be disabled" | (logwarn)
 				VM_NET="${VM_NET} -net none"
@@ -243,6 +260,7 @@ _cfg_9p_check() {
 			local share_name="$(echo ${single_9p}|cut -d';' -f1)"
 			local share_path="$(echo ${single_9p}|cut -sd';' -f2)"
 			local share_secm="$(echo ${single_9p}|cut -sd';' -f3)"
+			local share_read="$(echo ${single_9p}|cut -sd';' -f4)"
 
 			if [ -z ${share_name} ] || ! [ -e ${share_path} ]; then
 				echo "No name given or Path does not exist. ${DEFAULT_MSG}" | (logerr)
@@ -250,9 +268,10 @@ _cfg_9p_check() {
 			fi
 			# default security model none
 			share_secm=${share_secm:-none}
+			share_read=${share_read:-off}
 
 			VM_9P="${VM_9P} \
-				-fsdev local,id="${VM_NAME}_9p_${_9p_id}",path="${share_path}",security_model="${share_secm}" \
+				-fsdev local,id="${VM_NAME}_9p_${_9p_id}",path="${share_path}",security_model="${share_secm}",readonly="${share_read}" \
 				-device virtio-9p-pci,fsdev="${VM_NAME}_9p_${_9p_id}",mount_tag="${share_name}""
 			# print out 9p settings
 			echo "Adding 9P mount-tag: \"${share_name}\" sharing \"${share_path}\" with security \"${share_secm}\"" | (loginfo)
@@ -530,8 +549,13 @@ _myconfig(){
 	# qemu guest agent (qga)
 	(${VM_ENABLE_QGA:-false}) && myconfig+=(
 		-device virtio-serial
-		-chardev socket,path=${PID_DIR}/${VM_NAME}.qga.sock,server=on,wait=off,id=${VM_NAME}-qga
+		-chardev socket,id=${VM_NAME}-qga,path=${PID_DIR}/${VM_NAME}.qga.sock,server=on,wait=off
 		-device virtserialport,chardev=${VM_NAME}-qga,name=org.qemu.guest_agent.0
+	)
+	# qemu machine protocol (qmp)
+	(${VM_ENABLE_QMP:-false}) && myconfig+=(
+		-chardev socket,id=${VM_NAME}-qmp,path=${PID_DIR}/${VM_NAME}.qmp.sock,server=on,wait=off
+		-mon chardev=${VM_NAME}-qmp,mode=control,pretty=on
 	)
 
 	# sdl output
@@ -1054,7 +1078,7 @@ vm_stop(){
 	_check_running_vm ${vmname} || exit 1
 
 	_cleanup(){
-		for f in qga.sock sock pid; do
+		for f in qga.sock qmp.sock sock pid; do
 			if [ -e "${PID_DIR}/${vmname}.${f}" ]; then
 				rm ${PID_DIR}/${vmname}.${f}
 			fi
