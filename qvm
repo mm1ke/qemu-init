@@ -82,7 +82,7 @@ _vm_edit(){
 
 	_output="$(echo "${_cmd} ${_value}" | ${NC} -U -q1 ${PID_DIR}/${_vm}.sock)"
 	# catch some errors and print them
-	if $(echo ${_output}|grep -q "Migration is disabled"); then
+	if $(echo ${_output}|grep -q "Migration is disabled") || $(echo ${_output}|grep -q "Error:"); then
 		echo "${_output}" | head -n+3 | tail -n1 | (logerr)
 	fi
 }
