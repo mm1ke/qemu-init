@@ -558,6 +558,15 @@ _myconfig(){
 		-mon chardev=${VM_NAME}-qmp,mode=control,pretty=on
 	)
 
+	# enable pcie port
+	local _pcie_ports="${VM_PCIE_PORTS:-0}"
+	while [ ${_pcie_ports} -gt 0 ]; do
+		myconfig+=(
+			--device pcie-root-port,id=pcie-${_pcie_ports},slot=${_pcie_ports}
+		)
+		_pcie_ports=$(expr ${_pcie_ports} - 1)
+	done
+
 	# sdl output
 	if (${VM_ENABLE_SDL}); then
 		if (${VM_ENABLE_GL}); then
@@ -568,12 +577,13 @@ _myconfig(){
 	fi
 
 	# enable (multiple) usb redir devices
-	while [ ${VM_USB_REDIR:-0} -gt 0 ]; do
+	local _usb_redir="${VM_USB_REDIR:-0}"
+	while [ ${_usb_redir} -gt 0 ]; do
 		myconfig+=(
-			-chardev spicevmc,name=usbredir,id=usbredirchardev_${VM_USB_REDIR}
-			-device usb-redir,chardev=usbredirchardev_${VM_USB_REDIR},id=usbredirdev_${VM_USB_REDIR},debug=3
+			-chardev spicevmc,name=usbredir,id=usbredirchardev_${_usb_redir}
+			-device usb-redir,chardev=usbredirchardev_${_usb_redir},id=usbredirdev_${_usb_redir},debug=3
 		)
-		VM_USB_REDIR=$(expr ${VM_USB_REDIR} - 1)
+		_usb_redir=$(expr ${_usb_redir} - 1)
 	done
 
 	# remote access settings
@@ -812,6 +822,80 @@ vm_snapshot() {
 	esac
 }
 
+vm_hw(){
+	local _vm="${1}"
+	local _setting="${2}" # add | remove | list
+	local _type="${3}" # type network|harddisk
+	local _value1="${4}" # value 1
+	local _value2="${5}" # value 2
+
+	if [ -z "${_vm}" ] || [ -z "${_setting}" ]; then
+		echo "missing var: please make sure you passed [vmname], [setting]. see: qvm help"
+		exit 1
+	fi
+
+	local vmname=$(_define_vm ${_vm})
+	_check_running_vm ${vmname} || exit 1
+
+	if ! [ -e "${PID_DIR}/${vmname}.pcie.map" ]; then
+		echo "${PID_DIR}/${vmname}.pcie.map"
+		echo "you need to enable pcie root bus. Check config"
+		exit 1
+	else
+		local _pcie_ports_count="$(tr -d -c '|\n' < "${PID_DIR}/${vmname}.pcie.map" | awk '{ print length; }')"
+	fi
+
+	case ${_setting} in
+		list)
+			local _id="${_pcie_ports_count}"
+			while [ ${_id} -gt 0 ]; do
+				if [ -n "$(cut -d'|' -f${_id} "${PID_DIR}/${vmname}.pcie.map")" ]; then
+					echo "PCIE-${_id}: $(cut -d'|' -f${_id} "${PID_DIR}/${vmname}.pcie.map")"
+				fi
+				_id=$(expr ${_id} - 1)
+			done
+			;;
+		add)
+			local _id="${_pcie_ports_count}"
+			while [ ${_id} -ge 0 ]; do
+				if [ -z "$(cut -d'|' -f${_id} "${PID_DIR}/${vmname}.pcie.map")" ]; then
+					local _free_port="${_id}"
+					break
+				fi
+				_id=$(expr ${_id} - 1)
+			done
+			if [ "${_id}" = "0" ]; then
+				echo "no free pcie port available. add more or remove others"
+				exit 1
+			fi
+			case ${_type} in
+				network)
+					echo "adding additional pci network device"
+					if [ -z "${_value2}" ]; then
+						echo "need bridge interface"
+					fi
+					_vm_edit netdev_add ${vmname} bridge,br=${_value2},id=dev-${_id}
+					_vm_edit device_add ${vmname} ${_value1},netdev=dev-${_id},bus=pcie-${_id},id=pci-${_id}
+					awk -v "id=${_id}" -v "var=${_value1}" -i inplace 'BEGIN{FS=OFS="|"} {if (NR==1) {$id = var }; print}' ${PID_DIR}/${vmname}.pcie.map
+					;;
+				harddisk)
+					echo "adding additonal pci harddisk"
+					_vm_edit device_add ${vmname} ${_value1}
+					awk -v "id=${_id}" -v "var=${_value1}" -i inplace 'BEGIN{FS=OFS="|"} {if (NR==1) {$id = var }; print}' ${PID_DIR}/${vmname}.pcie.map
+					;;
+			esac
+			;;
+		remove)
+			echo "removeing device id ${_type}"
+			_vm_edit device_del ${vmname} pci-${_type}
+			_vm_edit netdev_del ${vmname} dev-${_type}
+			awk -v "id=${_type}" -i inplace 'BEGIN{FS=OFS="|"} {if (NR==1) {$id = "" }; print}' ${PID_DIR}/${vmname}.pcie.map
+			;;
+	esac
+
+	# awk -i inplace 'BEGIN{FS=OFS="|"} {if (NR==1) {$1 = "ASDF"}; print}' test.file
+}
+
 host_network(){
 	local _function="${1}"
 	local _name="${2}"
@@ -1040,6 +1124,13 @@ vm_start(){
 			exit 1
 		fi
 
+		# create empty pciemap file
+		local _pcie_ports="${VM_PCIE_PORTS:-0}"
+		while [ ${_pcie_ports:-0} -gt 0 ]; do
+			echo -n "|" >> ${PID_DIR}/${VM_NAME}.pcie.map
+			_pcie_ports=$(expr ${_pcie_ports} - 1)
+		done
+
 		if [ -n "${NET_INT}" ]; then
 			create_network "$(echo ${NET_INT[@]})"
 		fi
@@ -1078,7 +1169,7 @@ vm_stop(){
 	_check_running_vm ${vmname} || exit 1
 
 	_cleanup(){
-		for f in qga.sock qmp.sock sock pid; do
+		for f in qga.sock qmp.sock sock pid pcie.map; do
 			if [ -e "${PID_DIR}/${vmname}.${f}" ]; then
 				rm ${PID_DIR}/${vmname}.${f}
 			fi
@@ -1122,7 +1213,7 @@ vm_stop(){
 		echo "Couldn't find the process of ${vmname}, guest might already down." | (logwarn)
 	fi
 
-
+	# cleanup network interfaces
 	if [ -e "${PID_DIR}/${vmname}.net" ]; then
 		if ${TAP_DELETE}; then
 			delete_network "$(< ${PID_DIR}/${vmname}.net)"
@@ -1130,6 +1221,11 @@ vm_stop(){
 		else
 			rm ${PID_DIR}/${vmname}.net
 		fi
+	fi
+
+	# remove pcie.map
+	if [ -e "${PID_DIR}/${vmname}.pcie.map" ]; then
+			rm ${PID_DIR}/${vmname}.pcie.map
 	fi
 
 	# for some reason when running as root qemu doesn't clean up pid/sock files
@@ -1157,6 +1253,12 @@ usage() {
 	echo -e " memory 4096\t\tchange the memory of [vmname] via ballooing"
 	echo -e " sendkey ctrl-alt-f1\tsend key combination to [vmname] (like ctrl-alt-f1)"
 	echo -e " vnc|spice P4ssw0rd\tchange vnc or spice password of [vmname]"
+	echo
+	echo -e "vm/guest hw modify"
+	echo -e "qvm hw vmname add|remove|list [network|harddisk] [value]"
+	echo -e " add\t\t\tadd a pci [network|harddisk] device to the guest"
+	echo -e " remove\t\t\tremove a pci device from the guest"
+	echo -e " list\t\t\tlist added pci devices of the guest"
 	echo
 	echo -e "vm/guest snapshoting"
 	echo -e "qvm snapshot vmname create|delete|info|load [value]"
@@ -1193,6 +1295,7 @@ else
 		c|connect) vm_connect "${2}" ;;
 		l|list) vm_list "${2}" ;;
 		e|snapshot) vm_snapshot "${2}" "${3}" "${4}" ;;
+		h|hw) vm_hw "${2}" "${3}" "${4}" "${5}" "${6}" ;;
 		*) echo "Unknown command"; exit 1 ;;
 	esac
 fi
