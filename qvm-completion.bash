@@ -64,6 +64,11 @@ delete       delete existing snapshot
 list         list available snapshots
 load         load a specifig snapshot"
 
+	local _qvm_comp_cmd_hw="
+add          add a new PCI device
+remove       remove a PCI device
+list         list PCI devices added"
+
 	local _qvm_comp_cmd_all="
 boot         boot virtual machine
 stop         shutdown virtual machine
@@ -75,7 +80,8 @@ list         list all running/stopped virtual machines
 connect      connect to a virtual machine socket
 update       updates certain virtual machine settings
 network      add/removes tap interfaces on the host
-snapshot     create/delete/load/list available snapshots"
+snapshot     create/delete/load/list available snapshots
+hw           add/remove/list pci devices"
 
 	COMPREPLY=()
 	local cur=${COMP_WORDS[COMP_CWORD]}
@@ -96,7 +102,7 @@ snapshot     create/delete/load/list available snapshots"
 						__qvm_comp_with_text "$(find /etc/init.d/kvm.* -type l -printf '%f\n'|cut -d'.' -f2-|sort)"
 					fi
 					;;
-				stop|s|reboot|r|reset|x|freeze|f|list|l|connect|c|update|u|snapshot|e|pause|p)
+				stop|s|reboot|r|reset|x|freeze|f|list|l|connect|c|update|u|snapshot|e|pause|p|hw|h)
 					COMPREPLY=($(compgen -W "$(find ${pid_dir} -name *.pid -printf '%f\n'|rev|cut -d'.' -f2-|rev)" -- ${cur}))
 					;;
 				network|n)
@@ -120,6 +126,8 @@ snapshot     create/delete/load/list available snapshots"
 				snapshot|e)
 					__qvm_comp_with_text "${_qvm_comp_cmd_snapshot}"
 					;;
+				hw|h)
+					__qvm_comp_with_text "${_qvm_comp_cmd_hw}"
 			esac
 			;;
 		4)
@@ -142,8 +150,21 @@ snapshot     create/delete/load/list available snapshots"
 					;;
 				load)
 					local snapshots="$(echo "info snapshots" | nc -U -q1 /run/user/2000/${COMP_WORDS[COMP_CWORD-2]}.sock)"
-					COMPREPLY=($(compgen -W "$(echo "${snapshots}"|tail -n+5|head -n-1|tr -s \ '' | cut -d' ' -f2|tr '\n' ' ')"))
+					COMPREPLY=($(compgen -W "$(echo "${snapshots}"|tail -n+5|head -n-1|tr -s \ '' | cut -d' ' -f2|tr '\n' ' ')" -- ${cur}))
 					;;
+				add)
+					COMPREPLY=($(compgen -W "harddisk network" -- ${cur}))
+					;;
+				remove)
+					COMPREPLY=($(compgen -W "1 2 3 4" -- ${cur}))
+					;;
+			esac
+			;;
+		5)
+			case ${prev} in
+				network)
+					COMPREPLY=($(compgen -W "$(grep -v -e '^$' -e '^#' /etc/qemu/bridge.conf | cut -d' ' -f2|sort -u)" -- ${cur}))
+				;;
 			esac
 			;;
 		*)
