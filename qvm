@@ -75,9 +75,9 @@ _dry_run_check(){
 }
 
 _vm_edit(){
-	local _cmd=$1
-	local _vm=$2
-	local _value=$3
+	local _cmd="${1}"
+	local _vm="${2}"
+	local _value="${3}"
 	local _output
 
 	_output="$(echo "${_cmd} ${_value}" | ${NC} -U -q1 ${PID_DIR}/${_vm}.sock)"
@@ -827,7 +827,6 @@ vm_hw(){
 	local _setting="${2}" # add | remove | list
 	local _type="${3}" # type network|harddisk
 	local _value1="${4}" # value 1
-	local _value2="${5}" # value 2
 
 	if [ -z "${_vm}" ] || [ -z "${_setting}" ]; then
 		echo "missing var: please make sure you passed [vmname], [setting]. see: qvm help"
@@ -838,8 +837,7 @@ vm_hw(){
 	_check_running_vm ${vmname} || exit 1
 
 	if ! [ -e "${PID_DIR}/${vmname}.pcie.map" ]; then
-		echo "${PID_DIR}/${vmname}.pcie.map"
-		echo "you need to enable pcie root bus. Check config"
+		echo "You need to enable PCIE root bus. Check config" | (logerr)
 		exit 1
 	else
 		local _pcie_ports_count="$(tr -d -c '|\n' < "${PID_DIR}/${vmname}.pcie.map" | awk '{ print length; }')"
@@ -850,14 +848,14 @@ vm_hw(){
 			local _id="${_pcie_ports_count}"
 			while [ ${_id} -gt 0 ]; do
 				if [ -n "$(cut -d'|' -f${_id} "${PID_DIR}/${vmname}.pcie.map")" ]; then
-					echo "PCIE-${_id}: $(cut -d'|' -f${_id} "${PID_DIR}/${vmname}.pcie.map")"
+					echo "PCIE ID ${_id}: $(cut -d'|' -f${_id} "${PID_DIR}/${vmname}.pcie.map")" | (loginfo)
 				fi
 				_id=$(expr ${_id} - 1)
 			done
 			;;
 		add)
 			local _id="${_pcie_ports_count}"
-			while [ ${_id} -ge 0 ]; do
+			while [ ${_id} -gt 0 ]; do
 				if [ -z "$(cut -d'|' -f${_id} "${PID_DIR}/${vmname}.pcie.map")" ]; then
 					local _free_port="${_id}"
 					break
@@ -865,35 +863,55 @@ vm_hw(){
 				_id=$(expr ${_id} - 1)
 			done
 			if [ "${_id}" = "0" ]; then
-				echo "no free pcie port available. add more or remove others"
+				echo "Error: No free PCI ports available. Add more or remove others" | (logerr)
 				exit 1
 			fi
 			case ${_type} in
 				network)
 					echo "adding additional pci network device"
-					if [ -z "${_value2}" ]; then
-						echo "need bridge interface"
+					if [ -z "${_value1}" ]; then
+						echo "Error: Need bridge interface" | (logerr)
+						exit 1
 					fi
-					_vm_edit netdev_add ${vmname} bridge,br=${_value2},id=dev-${_id}
-					_vm_edit device_add ${vmname} ${_value1},netdev=dev-${_id},bus=pcie-${_id},id=pci-${_id}
-					awk -v "id=${_id}" -v "var=${_value1}" -i inplace 'BEGIN{FS=OFS="|"} {if (NR==1) {$id = var }; print}' ${PID_DIR}/${vmname}.pcie.map
+					#value1=bridge interface
+					_vm_edit netdev_add ${vmname} bridge,br=${_value1},id=net${_id}
+					_vm_edit device_add ${vmname} virtio-net-pci,netdev=net${_id},bus=pcie-${_id},id=net-${_id}
+					awk -v "id=${_id}" -v "var=virtio-net-pci,${_value1}" -i inplace 'BEGIN{FS=OFS="|"} {if (NR==1) {$id = var }; print}' ${PID_DIR}/${vmname}.pcie.map
 					;;
 				harddisk)
-					echo "adding additonal pci harddisk"
-					_vm_edit device_add ${vmname} ${_value1}
-					awk -v "id=${_id}" -v "var=${_value1}" -i inplace 'BEGIN{FS=OFS="|"} {if (NR==1) {$id = var }; print}' ${PID_DIR}/${vmname}.pcie.map
+					echo "Adding additonal PCI harddisk (${_value1})" | (loginfo)
+					local _format="${_value1##*.}"
+					if ! [ -f ${_value1} ]; then
+						echo "Error: ${value1} is not a regular file" | (logerr)
+						exit 1
+					fi
+					#value1=file
+					_vm_edit "drive_add 0" ${vmname} if=none,file=${_value1},format=${_format},id=disk${_id}
+					_vm_edit device_add ${vmname} virtio-blk-pci,drive=disk${_id},bus=pcie-${_id},id=disk-${_id}
+					awk -v "id=${_id}" -v "var=virtio-blk-pci,${_value1}" -i inplace 'BEGIN{FS=OFS="|"} {if (NR==1) {$id = var }; print}' ${PID_DIR}/${vmname}.pcie.map
 					;;
 			esac
 			;;
 		remove)
-			echo "removeing device id ${_type}"
-			_vm_edit device_del ${vmname} pci-${_type}
-			_vm_edit netdev_del ${vmname} dev-${_type}
+			local _dev="$(cut -d'|' -f${_type} ${PID_DIR}/${vmname}.pcie.map | cut -d ',' -f1)"
+			if [ -z "${_dev}" ]; then
+				echo "PCIE-${_type}: doesn't exist: Nothing was removed" | (logwarn)
+			else
+				echo "Removing device ID:${_type} ($(cut -d'|' -f${_type} ${PID_DIR}/${vmname}.pcie.map))" | (loginfo)
+				case ${_dev} in
+					virtio-net-pci)
+						_vm_edit device_del ${vmname} net-${_type}
+						_vm_edit netdev_del ${vmname} net${_type}
+						;;
+					virtio-blk-pci)
+						_vm_edit device_del ${vmname} disk-${_type}
+						;;
+				esac
+			fi
+			# _type is her the ID
 			awk -v "id=${_type}" -i inplace 'BEGIN{FS=OFS="|"} {if (NR==1) {$id = "" }; print}' ${PID_DIR}/${vmname}.pcie.map
 			;;
 	esac
-
-	# awk -i inplace 'BEGIN{FS=OFS="|"} {if (NR==1) {$1 = "ASDF"}; print}' test.file
 }
 
 host_network(){
