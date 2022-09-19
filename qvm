@@ -106,7 +106,7 @@ _check_remote_access_port(){
 	# check with netstat if a port is used
 	if [ -z "${port}" ]; then
 		local port_nr=0
-		while $(netstat -nat | egrep "${ip}:${range}${port_nr}[^0-9]" >/dev/null); do
+		while $(netstat -nat | grep -E "${ip}:${range}${port_nr}[^0-9]" >/dev/null); do
 			port_nr=$(expr ${port_nr} + 1)
 		done
 		local access_port="${range}${port_nr}"
@@ -194,7 +194,7 @@ _cfg_network_check(){
 				# random interfaces
 				else
 					# get the id nummber for qtap...
-					while (${BRIDGE} link | egrep -oq qtap${_net_id}); do
+					while (${BRIDGE} link | grep -Eoq qtap${_net_id}); do
 						_net_id=$(expr ${_net_id} + 1)
 					done
 					if ${_random_mac}; then
@@ -320,7 +320,7 @@ _cfg_remote_access_check() {
 	# get interface ip
 	if ${_net_tap_set}; then
 		local local_ip="$(${IP} address show ${BRDEV} \
-			| egrep -o '[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}' \
+			| grep -Eo '[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}' \
 			| head -n1)"
 	else
 		local local_ip="0.0.0.0"
