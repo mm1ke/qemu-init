@@ -748,7 +748,7 @@ vm_update() {
 	local _value="${3}"
 
 	if [ -z "${_vm}" ] || [ -z "${_setting}" ] || [ -z "${_value}" ]; then
-		echo "missing var: please make sure you passed [vmname] [setting] [value]. see: qvm help"
+		echo "missing var: please make sure you passed [vmname] [setting] [value]. see: qvm help" | (logerr)
 		exit 1
 	fi
 
@@ -781,7 +781,7 @@ vm_snapshot() {
 	local _value="${3}" # optional
 
 	if [ -z "${_vm}" ] || [ -z "${_setting}" ]; then
-		echo "missing var: please make sure you passed at least [vmname] and [setting]. see: qvm help"
+		echo "missing var: please make sure you passed at least [vmname] and [setting]. see: qvm help" | (logerr)
 		exit 1
 	fi
 
@@ -799,7 +799,7 @@ vm_snapshot() {
 			;;
 		delete)
 			if [ -z "${_value}" ]; then
-				echo "missing snapshot tag. see: qvm help"
+				echo "missing snapshot tag. see: qvm help" | (logerr)
 				exit 1
 			else
 				echo "Deleting snapshot: ${_value}" | (loginfo)
@@ -807,12 +807,12 @@ vm_snapshot() {
 			fi
 			;;
 		list)
-			echo "Listing available snapshots of ${_vm}"
+			echo "Listing available snapshots of ${_vm}" | (loginfo)
 			_vm_edit_snapshot_output "info snapshots" ${vmname}
 			;;
 		load)
 			if [ -z "${_value}" ]; then
-				echo "missing snapshot tag. see: qvm help"
+				echo "missing snapshot tag. see: qvm help" | (logerr)
 				exit 1
 			else
 				echo "loading snapshot: ${_value}" | (loginfo)
@@ -829,7 +829,7 @@ vm_hw(){
 	local _value1="${4}" # value 1
 
 	if [ -z "${_vm}" ] || [ -z "${_setting}" ]; then
-		echo "missing var: please make sure you passed [vmname], [setting]. see: qvm help"
+		echo "missing var: please make sure you passed [vmname], [setting]. see: qvm help" | (logerr)
 		exit 1
 	fi
 
@@ -922,14 +922,14 @@ host_network(){
 	case ${_function} in
 		add)
 			if [ -z "${_name}" ] || [ -z "${_bridge}" ]; then
-				echo "missing var: please make sure you passed name and bridge. see: qvm help"
+				echo "missing var: please make sure you passed name and bridge. see: qvm help" | (logerr)
 				exit 1
 			fi
 			create_network "${3},${2}"
 			;;
 		del)
 			if [ -z "${_name}" ]; then
-				echo "missing var: please make sure you passed name. see: qvm help"
+				echo "missing var: please make sure you passed name. see: qvm help" | (logerr)
 				exit 1
 			fi
 			delete_network "${2}"
@@ -1095,7 +1095,7 @@ vm_pause(){
 		echo "resume emulation"
 		echo "c" | ${NC} -U -q1 ${PID_DIR}/${vmname}.sock > /dev/null 2>&1
 	else
-		echo "Unknow system status: ${vm_status}"
+		echo "Unknow system status: ${vm_status}" | (logwarn)
 	fi
 }
 
@@ -1313,7 +1313,7 @@ else
 		c|connect) vm_connect "${2}" ;;
 		l|list) vm_list "${2}" ;;
 		e|snapshot) vm_snapshot "${2}" "${3}" "${4}" ;;
-		h|hw) vm_hw "${2}" "${3}" "${4}" "${5}" "${6}" ;;
+		h|hw) vm_hw "${2}" "${3}" "${4}" "${5}" ;;
 		*) echo "Unknown command"; exit 1 ;;
 	esac
 fi
