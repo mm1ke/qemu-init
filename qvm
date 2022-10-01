@@ -236,7 +236,6 @@ _cfg_network_check(){
 				VM_NET="${VM_NET} \
 					-netdev bridge,br=${net_brd},id=${VM_NAME}_${_net_id} \
 					-device ${net_drv},netdev=${VM_NAME}_${_net_id}"
-
 				;;
 
 			*)
@@ -1274,8 +1273,8 @@ usage() {
 	echo
 	echo -e "vm/guest hw modify"
 	echo -e "qvm hw vmname add|remove|list [network|harddisk] [value]"
-	echo -e " add\t\t\tadd a pci [network|harddisk] device to the guest"
-	echo -e " remove\t\t\tremove a pci device from the guest"
+	echo -e " add [value]\t\tadd a pci [network|harddisk] device to the guest"
+	echo -e " remove [value]\t\tremove a pci device from the guest"
 	echo -e " list\t\t\tlist added pci devices of the guest"
 	echo
 	echo -e "vm/guest snapshoting"
