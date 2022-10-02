@@ -223,6 +223,12 @@ _cfg_network_check(){
 				;;
 
 			bridge)
+				# if a tap device is set, set BRDEV to the first bridge device to get
+				# a ip for spice/vnc remote access
+				if ! ${_net_tap_set}; then
+					_net_tap_set=true
+					BRDEV=${net_brd}
+				fi
 				# check bridge device
 				if [ -n "${net_brd}" ]; then
 					if ! [ -d /sys/class/net/${net_brd}/bridge/ ]; then
