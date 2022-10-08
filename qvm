@@ -229,6 +229,10 @@ _cfg_network_check(){
 					_net_tap_set=true
 					BRDEV=${net_brd}
 				fi
+				# check the mac address
+				if ${_random_mac}; then
+					echo "MAC address \"${net_mac}\" for qtap${_net_id} is random and will be lost after shutdown" | (logwarn)
+				fi
 				# check bridge device
 				if [ -n "${net_brd}" ]; then
 					if ! [ -d /sys/class/net/${net_brd}/bridge/ ]; then
@@ -241,7 +245,7 @@ _cfg_network_check(){
 				fi
 				VM_NET="${VM_NET} \
 					-netdev bridge,br=${net_brd},id=${VM_NAME}_${_net_id} \
-					-device ${net_drv},netdev=${VM_NAME}_${_net_id}"
+					-device ${net_drv},netdev=${VM_NAME}_${_net_id},mac=${net_mac}"
 				;;
 
 			*)
