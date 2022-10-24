@@ -358,7 +358,7 @@ _cfg_remote_access_check() {
 		echo " VNC access on ${vnc_ip}:$(expr ${vnc_port} + 5900) (Password: \"${vnc_password}\")" | (loginfo)
 	fi
 
-	if ! ${VM_ENABLE_SPICE} && ! ${VM_ENABLE_VNC} && ! ${VM_ENABLE_SDL} && ${VM_ENABLE_DAEMONIZE}; then
+	if ! ${VM_ENABLE_SPICE} && ! ${VM_ENABLE_VNC} && [ "${VM_DISPLAY_MODE}" = "none" ] && ${VM_ENABLE_DAEMONIZE}; then
 		echo "No remote access or sdl enabled. At least one of them needs to be enabled!" | (logerr)
 		_dry_run_check || return 1
 	fi
@@ -413,8 +413,8 @@ _cfg_audio_check() {
 
 _cfgcheck(){
 	# default settings
-	VM_ENABLE_SDL=$(echo ${VM_ENABLE_SDL:-false})
 	VM_ENABLE_GL=$(echo ${VM_ENABLE_GL:-false})
+	VM_DISPLAY_MODE=$(echo ${VM_DISPLAY_MODE:-none})
 
 	VM_DEV="${VM_DEVICES} ${VM_DEVICES0} ${VM_DEVICES1} ${VM_DEVICES2} ${VM_DEVICES3} ${VM_DEVICES4} \
 		${VM_DEVICES5} ${VM_DEVICES6} ${VM_DEVICES7} ${VM_DEVICES8} ${VM_DEVICES9}"
@@ -424,8 +424,8 @@ _cfgcheck(){
 	fi
 
 	if ${VM_ENABLE_GL}; then
-		if ! [ "${VM_DISPLAY}" = "virtio" ] && ! ${VM_ENABLE_SDL}; then
-			echo "Virtio GPU-Driver and SDL must be enabled for OpenGL" | (logwarn)
+		if ! [ "${VM_DISPLAY}" = "virtio" ] && ! [ "${VM_DISPLAY_MODE}" = "none" ]; then
+			echo "Virtio GPU-Driver and SDL/GTK must be enabled for OpenGL" | (logwarn)
 			VM_ENABLE_GL=false
 		fi
 	fi
@@ -441,27 +441,27 @@ _cfgcheck(){
 			if ! $(getent passwd ${VM_USER} >/dev/null 2>&1); then
 				echo "User \"${VM_USER}\" not found. User set to nobody" | (logwarn)
 				VM_USER="nobody"
-				VM_ENABLE_SDL=false
 				VM_ENABLE_GL=false
+				VM_DISPLAY_MODE="none"
 			fi
 		else
 			echo "No user set. User nobody will be used" | (logwarn)
 			VM_USER="nobody"
-			VM_ENABLE_SDL=false
 			VM_ENABLE_GL=false
+			VM_DISPLAY_MODE="none"
 		fi
 	else
 		# if run as non root, set SET_USER to false to avoid using -runas
 		SET_USER="false"
 	fi
 
-	# check if SDL can be enabled (needs .Xauthority file)
+	# check if SDL/GTK can be enabled (needs .Xauthority file)
 	_check_xauth() {
-		if ${VM_ENABLE_SDL}; then
+		if ! [ "${VM_DISPLAY_MODE}" = "none" ]; then
 			if ! [ -e /home/${1}/.Xauthority ]; then
-				echo "No Xauthority file for user \"${1}\". Disabling SDL output" | (logwarn)
-				VM_ENABLE_SDL=false
+				echo "No Xauthority file for user \"${1}\". Disabling SDL/GTK output" | (logwarn)
 				VM_ENABLE_GL=false
+				VM_DISPLAY_MODE="none"
 			fi
 		fi
 	}
@@ -549,12 +549,23 @@ _myconfig(){
 	(${VM_ENABLE_DAEMONIZE:-true}) && myconfig+=(-daemonize)
 	# snapshotmode on/off
 	(${VM_ENABLE_SNAPSHOTMODE:-false}) && myconfig+=(-snapshot)
+
 	# spice virtual serial port (copy/paste)
-	(${VM_ENABLE_VIRTSERIAL:-true}) && myconfig+=(
-		-device virtio-serial
-		-chardev spicevmc,id=vdagent,name=vdagent
-		-device virtserialport,chardev=vdagent,name=com.redhat.spice.0
-	)
+	# if display mode is set to gtk we choose to use qemu-vdagent for clipboard
+	# sharing, which however disables it for spice connections
+	if [ ${VM_DISPLAY_MODE} = "gtk" ]; then
+		(${VM_ENABLE_VIRTSERIAL:-true}) && myconfig+=(
+			-chardev qemu-vdagent,id=vdagent,name=vdagent,clipboard=on,mouse=off \
+			-device virtio-serial,max_ports=2 \
+			-device virtserialport,chardev=vdagent,name=com.redhat.spice.0
+		)
+	else
+		(${VM_ENABLE_VIRTSERIAL:-true}) && myconfig+=(
+			-chardev spicevmc,id=vdagent,name=vdagent
+			-device virtio-serial
+			-device virtserialport,chardev=vdagent,name=com.redhat.spice.0
+		)
+	fi
 	# qemu guest agent (qga)
 	(${VM_ENABLE_QGA:-false}) && myconfig+=(
 		-device virtio-serial
@@ -576,13 +587,21 @@ _myconfig(){
 		_pcie_ports=$(expr ${_pcie_ports} - 1)
 	done
 
-	# sdl output
-	if (${VM_ENABLE_SDL}); then
-		if (${VM_ENABLE_GL}); then
-			myconfig+=(-display sdl,gl=on)
-		else
-			myconfig+=(-display sdl)
-		fi
+	# sdl/gtk output
+	if ! [ ${VM_DISPLAY_MODE} = "none" ]; then
+		case ${VM_DISPLAY_MODE} in
+			gtk*|sdl*)
+				if (${VM_ENABLE_GL}); then
+					myconfig+=(-display ${VM_DISPLAY_MODE},gl=on)
+				else
+					myconfig+=(-display ${VM_DISPLAY_MODE})
+				fi
+				;;
+			*)
+				echo "Error: ${VM_DISPLAY_MODE} not supported" | (logerr)
+				exit 1
+				;;
+		esac
 	fi
 
 	# enable (multiple) usb redir devices
@@ -613,7 +632,7 @@ _myconfig(){
 	fi
 
 	if ! ${VM_ENABLE_SPICE} && ! ${VM_ENABLE_VNC} && ! ${VM_ENABLE_DAEMONIZE}; then
-		(${VM_ENABLE_SDL}) || myconfig+=(-nographic)
+		! [ ${VM_DISPLAY_MODE} = "none"] || myconfig+=(-nographic)
 	fi
 
 	# enable/disable harddisks
@@ -1164,7 +1183,7 @@ vm_start(){
 
 		# TODO: weyland ??
 		#
-		if [ $(id -u) = 0 ] && ${VM_ENABLE_SDL}; then
+		if [ $(id -u) = 0 ] && ! [ ${VM_DISPLAY_MODE} = "none" ]; then
 			DISPLAY=:0 XAUTHORITY=/home/${VM_USER}/.Xauthority \
 				TMPDIR=${TMP_DIR} ${VM_QEMU_BIN} "${myconfig[@]}" >/dev/null
 		else
