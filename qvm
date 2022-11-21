@@ -119,8 +119,17 @@ _check_remote_access_port(){
 
 _cfg_network_check(){
 	# network checks/default settings
-	local _vm_interfaces="${VM_NETWORK} ${VM_NETWORK0} ${VM_NETWORK1} ${VM_NETWORK2} ${VM_NETWORK3} \
-		${VM_NETWORK4} ${VM_NETWORK5} ${VM_NETWORK6} ${VM_NETWORK7} ${VM_NETWORK8} ${VM_NETWORK9}"
+	declare -a _tmp_vm_interfaces=("${VM_NETWORK}" "${VM_NETWORK0}" "${VM_NETWORK1}" "${VM_NETWORK2}" "${VM_NETWORK3}" \
+		"${VM_NETWORK4}" "${VM_NETWORK5}" "${VM_NETWORK6}" "${VM_NETWORK7}" "${VM_NETWORK8}" "${VM_NETWORK9}")
+	declare -a _vm_interfaces
+	local i
+	for i in "${_tmp_vm_interfaces[@]}"; do
+		if [ -z "${i}" ]; then
+			continue
+		fi
+		_vm_interfaces+=("${i}")
+	done
+
 	local _net_user_set=false
 	local _net_tap_set=false
 	local _net_id=0
@@ -130,142 +139,154 @@ _cfg_network_check(){
 		_vhost_set=",vhost=on"
 	fi
 
-	for single_net in ${_vm_interfaces}; do
-		local net_typ="$(echo ${single_net}|cut -d';' -f1)"
-		local net_mac="$(echo ${single_net}|cut -sd';' -f2)"
-		local net_drv="$(echo ${single_net}|cut -sd';' -f3)"
-		local net_brd="$(echo ${single_net}|cut -sd';' -f4)"
-		local net_qtp="$(echo ${single_net}|cut -sd';' -f5)"
+	if [ -n "${_vm_interfaces}" ]; then
+		for single_net in ${_vm_interfaces[@]}; do
+			local net_typ="$(echo ${single_net}|cut -d';' -f1)"
+			local net_mac="$(echo ${single_net}|cut -sd';' -f2)"
+			local net_drv="$(echo ${single_net}|cut -sd';' -f3)"
+			local net_brd="$(echo ${single_net}|cut -sd';' -f4)"
+			local net_qtp="$(echo ${single_net}|cut -sd';' -f5)"
 
-		# set default network driver
-		net_drv=${net_drv:-rtl8139}
-		# check for mac address
-		if [ -z "${net_mac}" ]; then
-			local _random_mac=true
-			# set random mac address
-			net_mac="$(printf '56:6E:17:00:%02X:%02X\n' \
-				$(($(dd if=/dev/urandom count=1 2> /dev/null | cksum | cut -d' ' -f1) % 256)) \
-				$(($(dd if=/dev/urandom count=1 2> /dev/null | cksum | cut -d' ' -f1) % 256)))"
-		fi
+			# set default network driver
+			net_drv=${net_drv:-rtl8139}
+			# check for mac address
+			if [ -z "${net_mac}" ]; then
+				local _random_mac=true
+				# set random mac address
+				net_mac="$(printf '56:6E:17:00:%02X:%02X\n' \
+					$(($(dd if=/dev/urandom count=1 2> /dev/null | cksum | cut -d' ' -f1) % 256)) \
+					$(($(dd if=/dev/urandom count=1 2> /dev/null | cksum | cut -d' ' -f1) % 256)))"
+			fi
 
-		case ${net_typ} in
-			tap)
-				# if a tap device is set, set BRDEV to the first bridge device to get
-				# a ip for spice/vnc remote access
-				if ! ${_net_tap_set}; then
-					_net_tap_set=true
-					BRDEV=${net_brd}
-				fi
-				# check bridge device
-				if [ -n "${net_brd}" ]; then
-					if ! [ -d /sys/class/net/${net_brd}/bridge/ ]; then
-						echo "${net_brd} is not a bridge device. ${DEFAULT_MSG}" | (logerr)
+			case ${net_typ} in
+				tap)
+					# if a tap device is set, set BRDEV to the first bridge device to get
+					# a ip for spice/vnc remote access
+					if ! ${_net_tap_set}; then
+						_net_tap_set=true
+						BRDEV=${net_brd}
+					fi
+					# check bridge device
+					if [ -n "${net_brd}" ]; then
+						if ! [ -d /sys/class/net/${net_brd}/bridge/ ]; then
+							echo "${net_brd} is not a bridge device. ${DEFAULT_MSG}" | (logerr)
+							_dry_run_check || return 1
+						fi
+					else
+						echo "No bridge device setup! ${DEFAULT_MSG}" | (logerr)
 						_dry_run_check || return 1
 					fi
-				else
-					echo "No bridge device setup! ${DEFAULT_MSG}" | (logerr)
-					_dry_run_check || return 1
-				fi
-				# check for max_vms
-				if [ ${_net_id} -ge ${MAX_QTAP} ]; then
-					echo "Maximum number of network connections reached. Please increase the MAX_QTAP variable." | (logerr)
-					_dry_run_check || return 1
-				fi
-				# user defined interfaces
-				if [ -n "${net_qtp}" ]; then
-					# check if interface exists, other create it (NET_INT)
-					if ! [ -f /sys/class/net/${net_qtp}/tun_flags ]; then
-						NET_INT+=( ${net_brd},${net_qtp} )
-					else
-						# add the Interface net list
-						if [ "$(cat /sys/class/net/${net_qtp}/operstate)" = "up" ]; then
-							echo "\"${net_qtp}\" already used. ${DEFAULT_MSG}" | (logerr)
-							_dry_run_check || return 1
-						else
-							echo "${net_qtp} " >> ${PID_DIR}/${VM_NAME}.net
-						fi
+					# check for max_vms
+					if [ ${_net_id} -ge ${MAX_QTAP} ]; then
+						echo "Maximum number of network connections reached. Please increase the MAX_QTAP variable." | (logerr)
+						_dry_run_check || return 1
 					fi
+					# user defined interfaces
+					if [ -n "${net_qtp}" ]; then
+						# check if interface exists, other create it (NET_INT)
+						if ! [ -f /sys/class/net/${net_qtp}/tun_flags ]; then
+							NET_INT+=( ${net_brd},${net_qtp} )
+						else
+							# add the Interface net list
+							if [ "$(cat /sys/class/net/${net_qtp}/operstate)" = "up" ]; then
+								echo "\"${net_qtp}\" already used. ${DEFAULT_MSG}" | (logerr)
+								_dry_run_check || return 1
+							else
+								echo "${net_qtp} " >> ${PID_DIR}/${VM_NAME}.net
+							fi
+						fi
+						if ${_random_mac}; then
+							echo "MAC address \"${net_mac}\" for ${net_qtp} is random and will be lost after shutdown" | (logwarn)
+						fi
+						VM_NET="${VM_NET} \
+							-netdev tap,id="${VM_NAME}_${_net_id}",ifname=${net_qtp},script=no,downscript=no${_vhost_set} \
+							-device ${net_drv},netdev="${VM_NAME}_${_net_id}",mac=${net_mac}"
+					# random interfaces
+					else
+						# get the id nummber for qtap...
+						while (${BRIDGE} link | grep -Eoq qtap${_net_id}); do
+							_net_id=$(expr ${_net_id} + 1)
+						done
+						if ${_random_mac}; then
+							echo "MAC address \"${net_mac}\" for qtap${_net_id} is random and will be lost after shutdown" | (logwarn)
+						fi
+						VM_NET="${VM_NET} \
+							-netdev tap,id="${VM_NAME}_${_net_id}",ifname=qtap${_net_id},script=no,downscript=no${_vhost_set} \
+							-device ${net_drv},netdev="${VM_NAME}_${_net_id}",mac=${net_mac}"
+						# save interfaces to create later
+						NET_INT+=( ${net_brd},qtap${_net_id} )
+					fi
+					;;
+
+				user)
+					if (${_net_user_set}); then
+						echo "Network typ user can only be used once. ${DEFAULT_MSG}" | (logerr)
+						_dry_run_check || return 1
+					fi
+					_net_user_set=true
 					if ${_random_mac}; then
-						echo "MAC address \"${net_mac}\" for ${net_qtp} is random and will be lost after shutdown" | (logwarn)
+						echo "MAC address \"${net_mac}\" for usernet is random and will be lost after shutdown" | (logwarn)
 					fi
 					VM_NET="${VM_NET} \
-						-netdev tap,id="${VM_NAME}_${_net_id}",ifname=${net_qtp},script=no,downscript=no${_vhost_set} \
-						-device ${net_drv},netdev="${VM_NAME}_${_net_id}",mac=${net_mac}"
-				# random interfaces
-				else
-					# get the id nummber for qtap...
-					while (${BRIDGE} link | grep -Eoq qtap${_net_id}); do
-						_net_id=$(expr ${_net_id} + 1)
-					done
+							-netdev user,id=${VM_NAME}_${_net_id} \
+							-device ${net_drv},netdev="${VM_NAME}_${_net_id}",mac=${net_mac}"
+					;;
+
+				bridge)
+					# if a tap device is set, set BRDEV to the first bridge device to get
+					# a ip for spice/vnc remote access
+					if ! ${_net_tap_set}; then
+						_net_tap_set=true
+						BRDEV=${net_brd}
+					fi
+					# check the mac address
 					if ${_random_mac}; then
 						echo "MAC address \"${net_mac}\" for qtap${_net_id} is random and will be lost after shutdown" | (logwarn)
 					fi
-					VM_NET="${VM_NET} \
-						-netdev tap,id="${VM_NAME}_${_net_id}",ifname=qtap${_net_id},script=no,downscript=no${_vhost_set} \
-						-device ${net_drv},netdev="${VM_NAME}_${_net_id}",mac=${net_mac}"
-					# save interfaces to create later
-					NET_INT+=( ${net_brd},qtap${_net_id} )
-				fi
-				;;
-
-			user)
-				if (${_net_user_set}); then
-					echo "Network typ user can only be used once. ${DEFAULT_MSG}" | (logerr)
-					_dry_run_check || return 1
-				fi
-				_net_user_set=true
-				if ${_random_mac}; then
-					echo "MAC address \"${net_mac}\" for usernet is random and will be lost after shutdown" | (logwarn)
-				fi
-				VM_NET="${VM_NET} \
-						-netdev user,id=${VM_NAME}_${_net_id} \
-						-device ${net_drv},netdev="${VM_NAME}_${_net_id}",mac=${net_mac}"
-				;;
-
-			bridge)
-				# if a tap device is set, set BRDEV to the first bridge device to get
-				# a ip for spice/vnc remote access
-				if ! ${_net_tap_set}; then
-					_net_tap_set=true
-					BRDEV=${net_brd}
-				fi
-				# check the mac address
-				if ${_random_mac}; then
-					echo "MAC address \"${net_mac}\" for qtap${_net_id} is random and will be lost after shutdown" | (logwarn)
-				fi
-				# check bridge device
-				if [ -n "${net_brd}" ]; then
-					if ! [ -d /sys/class/net/${net_brd}/bridge/ ]; then
-						echo "${net_brd} is not a bridge device. ${DEFAULT_MSG}" | (logerr)
+					# check bridge device
+					if [ -n "${net_brd}" ]; then
+						if ! [ -d /sys/class/net/${net_brd}/bridge/ ]; then
+							echo "${net_brd} is not a bridge device. ${DEFAULT_MSG}" | (logerr)
+							_dry_run_check || return 1
+						fi
+					else
+						echo "No bridge device setup! ${DEFAULT_MSG}" | (logerr)
 						_dry_run_check || return 1
 					fi
-				else
-					echo "No bridge device setup! ${DEFAULT_MSG}" | (logerr)
-					_dry_run_check || return 1
-				fi
-				VM_NET="${VM_NET} \
-					-netdev bridge,br=${net_brd},id=${VM_NAME}_${_net_id} \
-					-device ${net_drv},netdev=${VM_NAME}_${_net_id},mac=${net_mac}"
-				;;
+					VM_NET="${VM_NET} \
+						-netdev bridge,br=${net_brd},id=${VM_NAME}_${_net_id} \
+						-device ${net_drv},netdev=${VM_NAME}_${_net_id},mac=${net_mac}"
+					;;
 
-			*)
-				echo "Unknow Network Typ. Network will be disabled" | (logwarn)
-				VM_NET="${VM_NET} -net none"
-				continue
-				;;
-		esac
-		_net_id=$(expr ${_net_id} + 1)
-	done
+				*)
+					echo "Unknow Network Typ. Network will be disabled" | (logwarn)
+					VM_NET="${VM_NET} -net none"
+					continue
+					;;
+			esac
+			_net_id=$(expr ${_net_id} + 1)
+		done
+	else
+		VM_NET="-net none"
+	fi
 }
 
 _cfg_9p_check() {
 	# 9P directory checks
-	local _vm_9pshare="${VM_9P_SHARE} ${VM_9P_SHARE0} ${VM_9P_SHARE1} ${VM_9P_SHARE2} ${VM_9P_SHARE3} \
-		${VM_9P_SHARE4} ${VM_9P_SHARE5} ${VM_9P_SHARE6} ${VM_9P_SHARE7} ${VM_9P_SHARE8} ${VM_9P_SHARE9}"
+	declare -a _tmp_vm_9pshare=("${VM_9P_SHARE}" "${VM_9P_SHARE0}" "${VM_9P_SHARE1}" "${VM_9P_SHARE2}" "${VM_9P_SHARE3}" \
+		"${VM_9P_SHARE4}" "${VM_9P_SHARE5}" "${VM_9P_SHARE6}" "${VM_9P_SHARE7}" "${VM_9P_SHARE8}" "${VM_9P_SHARE9}")
+	declare -a _vm_9pshare
+	local i
+	for i in "${_tmp_vm_9pshare[@]}"; do
+		if [ -z "${i}" ]; then
+			continue
+		fi
+		_vm_9pshare+=("${i}")
+	done
 	local _9p_id=0
 
 	if [ -n "${_vm_9pshare}" ]; then
-		for single_9p in ${_vm_9pshare}; do
+		for single_9p in ${_vm_9pshare[@]}; do
 			local share_name="$(echo ${single_9p}|cut -d';' -f1)"
 			local share_path="$(echo ${single_9p}|cut -sd';' -f2)"
 			local share_secm="$(echo ${single_9p}|cut -sd';' -f3)"
@@ -292,11 +313,19 @@ _cfg_9p_check() {
 
 _cfg_harddisk_check() {
 	# image checks/default settings
-	local _vm_harddisk="${VM_HARDDISK} ${VM_HARDDISK0} ${VM_HARDDISK1} ${VM_HARDDISK2} ${VM_HARDDISK3} \
-		${VM_HARDDISK4} ${VM_HARDDISK5} ${VM_HARDDISK6} ${VM_HARDDISK7} ${VM_HARDDISK8} ${VM_HARDDISK9}"
+	declare -a _tmp_vm_harddisk=("${VM_HARDDISK}" "${VM_HARDDISK0}" "${VM_HARDDISK1}" "${VM_HARDDISK2}" "${VM_HARDDISK3}" \
+		"${VM_HARDDISK4}" "${VM_HARDDISK5}" "${VM_HARDDISK6}" "${VM_HARDDISK7}" "${VM_HARDDISK8}" "${VM_HARDDISK9}")
+	declare -a _vm_harddisk
+	local i
+	for i in "${_tmp_vm_harddisk[@]}"; do
+		if [ -z "${i}" ]; then
+			continue
+		fi
+		_vm_harddisk+=("${i}")
+	done
 
 	if [ -n "${_vm_harddisk}" ]; then
-		for single_hd in ${_vm_harddisk}; do
+		for single_hd in ${_vm_harddisk[@]}; do
 			local hd_path="$(echo ${single_hd}|cut -d';' -f1)"
 			local hd_if="$(echo ${single_hd}|cut -sd';' -f2)"
 			local hd_cache="$(echo ${single_hd}|cut -sd';' -f3)"
@@ -365,12 +394,22 @@ _cfg_remote_access_check() {
 }
 
 _cfg_audio_check() {
-	local _vm_audio="${VM_AUDIO} ${VM_AUDIO0} ${VM_AUDIO1} ${VM_AUDIO2} ${VM_AUDIO3} \
-		${VM_AUDIO4} ${VM_AUDIO5} ${VM_AUDIO6} ${VM_AUDIO7} ${VM_AUDIO8} ${VM_AUDIO9}"
+	declare -a _tmp_vm_audio=("${VM_AUDIO}" "${VM_AUDIO0}" "${VM_AUDIO1}" "${VM_AUDIO2}" "${VM_AUDIO3}" \
+		"${VM_AUDIO4}" "${VM_AUDIO5}" "${VM_AUDIO6}" "${VM_AUDIO7}" "${VM_AUDIO8}" "${VM_AUDIO9}")
+	declare -a _vm_audio
+	local i
+	for i in "${_tmp_vm_audio[@]}"; do
+		if [ -z "${i}" ]; then
+			continue
+		fi
+		_vm_audio+=("${i}")
+	done
+
+
 	local _audio_id=0
 
 	if [ -n "${_vm_audio}" ]; then
-		for single_audio in ${_vm_audio}; do
+		for single_audio in ${_vm_audio[@]}; do
 			local audio_dev="$(echo ${single_audio}|cut -d';' -f1)"
 			local audio_hw="$(echo ${single_audio}|cut -sd';' -f2)"
 
@@ -416,8 +455,20 @@ _cfgcheck(){
 	VM_ENABLE_GL=$(echo ${VM_ENABLE_GL:-false})
 	VM_DISPLAY_MODE=$(echo ${VM_DISPLAY_MODE:-none})
 
-	VM_DEV="${VM_DEVICES} ${VM_DEVICES0} ${VM_DEVICES1} ${VM_DEVICES2} ${VM_DEVICES3} ${VM_DEVICES4} \
-		${VM_DEVICES5} ${VM_DEVICES6} ${VM_DEVICES7} ${VM_DEVICES8} ${VM_DEVICES9}"
+	declare -a _tmp_vm_dev=("${VM_DEVICES}" "${VM_DEVICES0}" "${VM_DEVICES1}" "${VM_DEVICES2}" "${VM_DEVICES3}" \
+		"${VM_DEVICES4}" "${VM_DEVICES5}" "${VM_DEVICES6}" "${VM_DEVICES7}" "${VM_DEVICES8}" "${VM_DEVICES9}")
+	declare -a _vm_dev
+	local i
+	for i in "${_tmp_vm_dev[@]}"; do
+		if [ -z "${i}" ]; then
+			continue
+		fi
+		_vm_dev+=("${i}")
+	done
+
+	for single_dev in ${_vm_dev[@]}; do
+		VM_DEV="${VM_DEV} ${single_dev}"
+	done
 
 	if (${VM_ENABLE_SNAPSHOTMODE:-false}); then
 		echo "SNAPSHOT MODE! Changes to the guest system won't be saved!" | (logwarn)
