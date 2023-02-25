@@ -1286,24 +1286,62 @@ vm_start(){
 	fi
 }
 
-vm_stop(){
+# cleanup is only required if guest was killed or it was running as root user
+# usually qemu handles this by itself and would cleanup these files anyway
+__vm_cleanup(){
+	local vmname="${1}"
+	for f in qga.sock qmp.sock sock pid pcie.map; do
+		if [ -e "${PID_DIR}/${vmname}.${f}" ]; then
+			rm ${PID_DIR}/${vmname}.${f}
+		fi
+	done
+}
+
+# cleanup of network interfaces is always required
+__vm_cleanup_net(){
+	local vmname="${1}"
+	# cleanup network interfaces
+	if [ -e "${PID_DIR}/${vmname}.net" ]; then
+		if ${TAP_DELETE}; then
+			delete_network "$(< ${PID_DIR}/${vmname}.net)"
+			rm ${PID_DIR}/${vmname}.net
+		else
+			rm ${PID_DIR}/${vmname}.net
+		fi
+	fi
+
+	# remove pcie.map
+	if [ -e "${PID_DIR}/${vmname}.pcie.map" ]; then
+			rm ${PID_DIR}/${vmname}.pcie.map
+	fi
+}
+
+vm_kill(){
 	local vmname=$(_define_vm ${1})
 	_check_running_vm ${vmname} || exit 1
 
-	_cleanup(){
-		for f in qga.sock qmp.sock sock pid pcie.map; do
-			if [ -e "${PID_DIR}/${vmname}.${f}" ]; then
-				rm ${PID_DIR}/${vmname}.${f}
-			fi
-		done
-	}
+	local KVM_PID="$(< ${PID_DIR}/${vmname}.pid)"
+
+	# check if guest PID is actually running
+	if (kill -0 ${KVM_PID} >/dev/null 2>&1); then
+		echo "Killing ${vmname}." | (logwarn)
+		kill -9 ${KVM_PID} > /dev/null 2>&1
+	fi
+
+	__vm_cleanup "${vmname}"
+	__vm_cleanup_net "${vmname}"
+}
+
+vm_stop(){
+	local vmname=$(_define_vm ${1})
+	_check_running_vm ${vmname} || exit 1
 
 	# set default kill wait to 80 seconds
 	[ -z "${VM_KILL_WAIT}" ] && VM_KILL_WAIT=80
 	local KVM_PID="$(< ${PID_DIR}/${vmname}.pid)"
 
+	# check if guest PID is actually running
 	if (kill -0 ${KVM_PID} >/dev/null 2>&1); then
-
 		echo "Stopping ${vmname} ..." | (loginfo)
 		# sending via nc (netcat) the shutdown command
 		echo "system_powerdown" | ${NC} -U -q1 ${PID_DIR}/${vmname}.sock > /dev/null 2>&1
@@ -1320,7 +1358,7 @@ vm_stop(){
 				sleep 1
 				echo "Killed ${vmname}" | (logwarn)
 				# we need to cleanup manually in case the vm got killed
-				_cleanup
+				__vm_cleanup "${vmname}"
 				break
 			fi
 			# send system_powerdown every 20 seconds
@@ -1335,24 +1373,11 @@ vm_stop(){
 		echo "Couldn't find the process of ${vmname}, guest might already down." | (logwarn)
 	fi
 
-	# cleanup network interfaces
-	if [ -e "${PID_DIR}/${vmname}.net" ]; then
-		if ${TAP_DELETE}; then
-			delete_network "$(< ${PID_DIR}/${vmname}.net)"
-			rm ${PID_DIR}/${vmname}.net
-		else
-			rm ${PID_DIR}/${vmname}.net
-		fi
-	fi
-
-	# remove pcie.map
-	if [ -e "${PID_DIR}/${vmname}.pcie.map" ]; then
-			rm ${PID_DIR}/${vmname}.pcie.map
-	fi
+	__vm_cleanup_net "${vmname}"
 
 	# for some reason when running as root qemu doesn't clean up pid/sock files
 	# after we stopped a vm. So lets clean them up manually.
-	[ $(id -u) = 0 ] && _cleanup
+	[ $(id -u) = 0 ] && __vm_cleanup "${vmname}"
 }
 
 usage() {
@@ -1360,8 +1385,9 @@ usage() {
 	echo -e "start/stop and manipulating qemu vms"
 	echo
 	echo -e "guest start/stopping"
-	echo -e "qvm b|s|r|x|f|l|c|p vmname|/path/to/configfile"
+	echo -e "qvm b|k|s|r|x|f|l|c|p vmname|/path/to/configfile"
 	echo -e " b|boot\t\t\tboot virtual machine config file"
+	echo -e " k|kill\t\t\tkill virtual machine instantly"
 	echo -e " s|stop\t\t\tstop virtual machine"
 	echo -e " r|reboot\t\trestart virtual machine (via qemu guest agent)"
 	echo -e " x|reset\t\treset virtual machine"
@@ -1408,6 +1434,7 @@ else
 	case "${1}" in
 		b|boot) vm_start "${2}" "${3}" ;;
 		s|stop) vm_stop "${2}" ;;
+		k|kill) vm_kill "${2}" ;;
 		r|reboot) vm_reboot "${2}" ;;
 		x|reset) vm_reset "${2}" ;;
 		f|freeze) vm_freeze_thaw "${2}" ;;

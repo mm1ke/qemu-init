@@ -70,6 +70,7 @@ list         list PCI devices added"
 
 	local _qvm_comp_cmd_all="
 boot         boot virtual machine
+kill         kill virtual machine instantly
 stop         shutdown virtual machine
 reboot       reboot virtual machine (via qemu guest agent)
 reset        resets virtual machine
@@ -106,7 +107,7 @@ fullscreen   start the vm in fullscreen mode"
 						__qvm_comp_with_text "$(find /etc/init.d/kvm.* -type l -printf '%f\n'|cut -d'.' -f2-|sort)"
 					fi
 					;;
-				stop|s|reboot|r|reset|x|freeze|f|list|l|connect|c|update|u|snapshot|e|pause|p|hw|h)
+				stop|s|reboot|r|reset|x|freeze|f|list|l|connect|c|update|u|snapshot|e|pause|p|hw|h|kill|k)
 					COMPREPLY=($(compgen -W "$(find ${pid_dir} -name *.pid -printf '%f\n'|rev|cut -d'.' -f2-|rev)" -- ${cur}))
 					;;
 				network|n)
