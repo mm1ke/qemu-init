@@ -140,7 +140,7 @@ _cfg_network_check(){
 	fi
 
 	if [ -n "${_vm_interfaces}" ]; then
-		for single_net in ${_vm_interfaces[@]}; do
+		for single_net in "${_vm_interfaces[@]}"; do
 			local net_typ="$(echo ${single_net}|cut -d';' -f1)"
 			local net_mac="$(echo ${single_net}|cut -sd';' -f2)"
 			local net_drv="$(echo ${single_net}|cut -sd';' -f3)"
@@ -286,7 +286,7 @@ _cfg_9p_check() {
 	local _9p_id=0
 
 	if [ -n "${_vm_9pshare}" ]; then
-		for single_9p in ${_vm_9pshare[@]}; do
+		for single_9p in "${_vm_9pshare[@]}"; do
 			local share_name="$(echo ${single_9p}|cut -d';' -f1)"
 			local share_path="$(echo ${single_9p}|cut -sd';' -f2)"
 			local share_secm="$(echo ${single_9p}|cut -sd';' -f3)"
@@ -325,7 +325,7 @@ _cfg_harddisk_check() {
 	done
 
 	if [ -n "${_vm_harddisk}" ]; then
-		for single_hd in ${_vm_harddisk[@]}; do
+		for single_hd in "${_vm_harddisk[@]}"; do
 			local hd_path="$(echo ${single_hd}|cut -d';' -f1)"
 			local hd_if="$(echo ${single_hd}|cut -sd';' -f2)"
 			local hd_cache="$(echo ${single_hd}|cut -sd';' -f3)"
@@ -409,7 +409,7 @@ _cfg_audio_check() {
 	local _audio_id=0
 
 	if [ -n "${_vm_audio}" ]; then
-		for single_audio in ${_vm_audio[@]}; do
+		for single_audio in "${_vm_audio[@]}"; do
 			local audio_dev="$(echo ${single_audio}|cut -d';' -f1)"
 			local audio_hw="$(echo ${single_audio}|cut -sd';' -f2)"
 
@@ -466,7 +466,7 @@ _cfgcheck(){
 		_vm_dev+=("${i}")
 	done
 
-	for single_dev in ${_vm_dev[@]}; do
+	for single_dev in "${_vm_dev[@]}"; do
 		VM_DEV="${VM_DEV} ${single_dev}"
 	done
 
@@ -482,8 +482,7 @@ _cfgcheck(){
 	fi
 
 	# basic tests/settings
-
-
+	#
 	# if script runs as root respect VM_USER setting from config file
 	# otherwise use current running user
 	SET_USER="true"
@@ -683,7 +682,7 @@ _myconfig(){
 	fi
 
 	if ! ${VM_ENABLE_SPICE} && ! ${VM_ENABLE_VNC} && ! ${VM_ENABLE_DAEMONIZE}; then
-		! [ ${VM_DISPLAY_MODE} = "none"] || myconfig+=(-nographic)
+		! [ ${VM_DISPLAY_MODE} = "none" ] || myconfig+=(-nographic)
 	fi
 
 	# enable/disable harddisks
@@ -1049,7 +1048,7 @@ create_network() {
 			${TAP}
 		EOM
 
-		if [ -n ${VM_NAME} ]; then
+		if [ -n "${VM_NAME}" ]; then
 			echo "${_name} " >> ${PID_DIR}/${VM_NAME}.net
 		fi
 	done
@@ -1232,7 +1231,7 @@ vm_start(){
 			create_network "$(echo ${NET_INT[@]})"
 		fi
 
-		# TODO: weyland ??
+		# TODO: wayland ??
 		#
 		if [ $(id -u) = 0 ] && ! [ ${VM_DISPLAY_MODE} = "none" ]; then
 			DISPLAY=:0 XAUTHORITY=/home/${VM_USER}/.Xauthority \
