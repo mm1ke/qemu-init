@@ -22,8 +22,7 @@
 # qvm-completion: bash completion for qvm
 
 function _qvm_comp_list(){
-
-	local _qvm_comp_cmd_all _qvm_comp_cmd_update _qvm_comp_cmd_snapshot
+	local _qvm_comp_cmd_all _qvm_comp_cmd_update _qvm_comp_cmd_snapshot _qvm_comp_cmd_parameters
 	local cur prev pid_dir
 
 	function __qvm_comp_with_text(){
@@ -83,6 +82,11 @@ network      add/removes tap interfaces on the host
 snapshot     create/delete/load/list available snapshots
 hw           add/remove/list pci devices"
 
+ local _qvm_comp_cmd_parameters="
+readonly     start the vm in snapshot mode (changes wont be saved)
+pxeboot      start the vm and force booting from network
+fullscreen   start the vm in fullscreen mode"
+
 	COMPREPLY=()
 	local cur=${COMP_WORDS[COMP_CWORD]}
 	local prev=${COMP_WORDS[COMP_CWORD-1]}
@@ -120,6 +124,9 @@ hw           add/remove/list pci devices"
 					;;
 			esac
 			case ${COMP_WORDS[COMP_CWORD-2]} in
+				boot|b)
+					__qvm_comp_with_text "${_qvm_comp_cmd_parameters}"
+					;;
 				update|u)
 					__qvm_comp_with_text "${_qvm_comp_cmd_update}"
 					;;

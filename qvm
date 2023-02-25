@@ -708,6 +708,9 @@ _myconfig(){
 			network|n) myconfig+=(-boot n) ;;
 		esac
 	fi
+
+	# add qvm parameters (not in configfiles)
+	[ -z "${VM_PARAMETER}" ] ||	myconfig+=(${VM_PARAMETER})
 }
 
 _check_running_vm() {
@@ -1180,6 +1183,7 @@ vm_pause(){
 vm_start(){
 	# get VM_NAME
 	VM_NAME="$(_define_vm ${1})"
+	local parameter="${2}"
 
 	# find out which file to source
 	local vm_config_file="${1}"
@@ -1196,9 +1200,32 @@ vm_start(){
 	# Start the Virtual Machine
 	echo "Starting ${VM_NAME} ..." | (loginfo)
 
+	# source the config file of the given vm
 	source ${vm_config_file}
 	# default message
 	DEFAULT_MSG="Please check your config (${vm_config_file})"
+
+	# override some vm start parameters
+	if [ -n "${parameter}" ]; then
+		case "${parameter}" in
+			readonly)
+				VM_ENABLE_SNAPSHOTMODE=true
+				;;
+			pxeboot)
+				echo "enabling pxeboot" | (logwarn)
+				VM_KERNEL=""
+				VM_INITRD=""
+				VM_BOOT_DEV="network"
+				;;
+			fullscreen)
+				echo "starting vm in fullscreen" | (logwarn)
+				VM_PARAMETER="-full-screen"
+				;;
+			*)
+				echo "Parameter: ${parameter} not known" | (logerr)
+				;;
+		esac
+	fi
 
 	# Test if requested arch is available in qemu
 	# defaulting to system arch
@@ -1228,10 +1255,11 @@ vm_start(){
 		done
 
 		if [ -n "${NET_INT}" ]; then
-			create_network "$(echo ${NET_INT[@]})"
+			create_network "${NET_INT[@]}"
 		fi
 
-		# TODO: wayland ??
+		# here is the vm actually started via qemu
+		# TODO: wayland without Xauthority file ??
 		#
 		if [ $(id -u) = 0 ] && ! [ ${VM_DISPLAY_MODE} = "none" ]; then
 			DISPLAY=:0 XAUTHORITY=/home/${VM_USER}/.Xauthority \
@@ -1380,7 +1408,7 @@ if [ -z "${2}" ]; then
 	esac
 else
 	case "${1}" in
-		b|boot) vm_start "${2}" ;;
+		b|boot) vm_start "${2}" "${3}" ;;
 		s|stop) vm_stop "${2}" ;;
 		r|reboot) vm_reboot "${2}" ;;
 		x|reset) vm_reset "${2}" ;;
