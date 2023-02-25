@@ -576,14 +576,12 @@ _myconfig(){
 		-smp ${VM_SMP:-1}
 		-machine ${VM_MACHINE:-pc}
 		-k ${VM_LC:-de}
+		-cpu ${VM_CPU:-host}
+		-accel ${VM_ACCEL:-kvm}
 	)
 
 	# set runas user
 	${SET_USER} && myconfig+=(-runas ${VM_USER})
-	# set cpu
-	[ -n "${VM_CPU}" ] && myconfig+=(-cpu ${VM_CPU})
-	# set vm accel
-	[ -n "${VM_ACCEL}" ] && myconfig+=(-accel ${VM_ACCEL})
 
 	if [ -n "${VM_KERNEL}" ]; then
 		myconfig+=(
