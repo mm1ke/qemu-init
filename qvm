@@ -474,8 +474,9 @@ _cfgcheck(){
 		echo "SNAPSHOT MODE! Changes to the guest system won't be saved!" | (logwarn)
 	fi
 
+	# enable OpenGL only for the virtio display driver
 	if ${VM_ENABLE_GL}; then
-		if ! [ "${VM_DISPLAY}" = "virtio" ] && ! [ "${VM_DISPLAY_MODE}" = "none" ]; then
+		if ! [ "${VM_VGA}" = "virtio" ] && ! [ "${VM_DISPLAY_MODE}" = "none" ]; then
 			echo "Virtio GPU-Driver and SDL/GTK must be enabled for OpenGL" | (logwarn)
 			VM_ENABLE_GL=false
 		fi
@@ -507,15 +508,14 @@ _cfgcheck(){
 
 	# check if SDL/GTK can be enabled (needs .Xauthority file)
 	_check_xauth() {
-		if ! [ "${VM_DISPLAY_MODE}" = "none" ]; then
+		if [ "${VM_DISPLAY_MODE}" == "sdl" ]; then
 			if ! [ -e /home/${1}/.Xauthority ]; then
-				echo "No Xauthority file for user \"${1}\". Disabling SDL/GTK output" | (logwarn)
+				echo "No Xauthority file for user \"${1}\". Disabling SDL output. You might want to use GTK instead" | (logwarn)
 				VM_ENABLE_GL=false
 				VM_DISPLAY_MODE="none"
 			fi
 		fi
 	}
-	# check for Xauthority file
 	if [ $(id -u) = 0 ]; then
 		_check_xauth "${VM_USER}"
 	else
@@ -599,8 +599,10 @@ _myconfig(){
 	(${VM_ENABLE_SNAPSHOTMODE:-false}) && myconfig+=(-snapshot)
 
 	# spice virtual serial port (copy/paste)
+	# there are two possiblities for clipboard sharing
+	# qemu-vdagent and spicevmc
 	# if display mode is set to gtk we choose to use qemu-vdagent for clipboard
-	# sharing, which however disables it for spice connections
+	# sharing. this however disables it for spice connections
 	if [ ${VM_DISPLAY_MODE} = "gtk" ]; then
 		(${VM_ENABLE_VIRTSERIAL:-true}) && myconfig+=(
 			-chardev qemu-vdagent,id=vdagent,name=vdagent,clipboard=on,mouse=off \
@@ -690,7 +692,7 @@ _myconfig(){
 	# 9p shares
 	[ -z "${VM_9P}" ] || myconfig+=(${VM_9P})
 	# display settings
-	[ -z "${VM_DISPLAY}" ] || myconfig+=(-vga ${VM_DISPLAY})
+	[ -z "${VM_VGA}" ] || myconfig+=(-vga ${VM_VGA})
 	# audio settings
 	[ -z "${VM_SOUND}" ] || myconfig+=(${VM_SOUND})
 	# other devices
@@ -1219,6 +1221,10 @@ vm_start(){
 				echo "starting vm in fullscreen" | (logwarn)
 				VM_PARAMETER="-full-screen"
 				;;
+			dryrun)
+				DRYRUN=true
+				echo "dryrun - only printing boot parameters:" | (logwarn)
+				;;
 			*)
 				echo "Parameter: ${parameter} not known" | (logerr)
 				;;
@@ -1241,6 +1247,7 @@ vm_start(){
 		_myconfig
 
 		if _dry_run_check; then
+			echo "${VM_QEMU_BIN} ${myconfig[@]}"
 			echo "DRYRUN! Exiting now." | (logwarn)
 			exit 1
 		fi
@@ -1260,11 +1267,12 @@ vm_start(){
 		# TODO: wayland without Xauthority file ??
 		#
 		if [ $(id -u) = 0 ] && ! [ ${VM_DISPLAY_MODE} = "none" ]; then
-			DISPLAY=:0 XAUTHORITY=/home/${VM_USER}/.Xauthority \
+			DISPLAY=:0 #XAUTHORITY=/home/${VM_USER}/.Xauthority \
 				TMPDIR=${TMP_DIR} ${VM_QEMU_BIN} "${myconfig[@]}" >/dev/null
 		else
 			TMPDIR=${TMP_DIR} ${VM_QEMU_BIN} "${myconfig[@]}" >/dev/null
 		fi
+		#TMPDIR=${TMP_DIR} ${VM_QEMU_BIN} "${myconfig[@]}" >/dev/null
 
 		# remove tap devices if the guest system couldn't be started
 		if [ "$?" != "0" ]; then
@@ -1382,7 +1390,7 @@ vm_stop(){
 
 usage() {
 	echo -e "qvm"
-	echo -e "start/stop and manipulating qemu vms"
+	echo -e "start,stop and manipulating qemu vms"
 	echo
 	echo -e "guest start/stopping"
 	echo -e "qvm b|k|s|r|x|f|l|c|p vmname|/path/to/configfile"
@@ -1402,7 +1410,7 @@ usage() {
 	echo -e " sendkey ctrl-alt-f1\tsend key combination to [vmname] (like ctrl-alt-f1)"
 	echo -e " vnc|spice P4ssw0rd\tchange vnc or spice password of [vmname]"
 	echo
-	echo -e "vm/guest hw modify"
+	echo -e "vm/guest add/remove virtual hardware"
 	echo -e "qvm hw vmname add|remove|list [network|harddisk] [value]"
 	echo -e " add [value]\t\tadd a pci [network|harddisk] device to the guest"
 	echo -e " remove [value]\t\tremove a pci device from the guest"
@@ -1448,3 +1456,28 @@ else
 		*) echo "Unknown command"; exit 1 ;;
 	esac
 fi
+
+
+# qvm 
+#		boot
+#		stop
+#		kill
+# 	list
+#		reset
+#		connect
+
+# 	vm
+#			(update)
+#			.memory
+#			.sendkey
+#			.vnc
+#			.spice
+# 		hw
+#			snapshot
+#			pause
+# 		freeze
+#			reboot
+
+# 	host
+#			network
+#			config

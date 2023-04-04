@@ -86,7 +86,8 @@ hw           add/remove/list pci devices"
  local _qvm_comp_cmd_parameters="
 readonly     start the vm in snapshot mode (changes wont be saved)
 pxeboot      start the vm and force booting from network
-fullscreen   start the vm in fullscreen mode"
+fullscreen   start the vm in fullscreen mode
+dryrun       dryrun: don't boot the vm but print out the startparameters"
 
 	COMPREPLY=()
 	local cur=${COMP_WORDS[COMP_CWORD]}
