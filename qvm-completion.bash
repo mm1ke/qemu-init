@@ -165,7 +165,7 @@ dryrun       dryrun: don't boot the vm but print out the startparameters"
 					COMPREPLY=($(compgen -W "harddisk network" -- ${cur}))
 					;;
 				remove)
-					COMPREPLY=($(compgen -W "1 2 3 4" -- ${cur}))
+					COMPREPLY=($(compgen -W "ID1 ID2 ID3 ID4" -- ${cur}))
 					;;
 			esac
 			;;

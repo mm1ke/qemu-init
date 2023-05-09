@@ -713,8 +713,9 @@ _myconfig(){
 	[ -z "${VM_PARAMETER}" ] ||	myconfig+=(${VM_PARAMETER})
 }
 
+# check if a given vm is running and exit if not
 _check_running_vm() {
-	local _vm=${1}
+	local _vm="${1}"
 	# if the executing user is not root we only see vm's of the user since the PID
 	# files for system vm's are at different place and usually not readable for
 	# users
@@ -722,28 +723,6 @@ _check_running_vm() {
 		echo "\"${_vm}\" not running!" | (loginfo)
 		exit 1
 	fi
-}
-
-_define_vm() {
-	local _vm_arg=${1}
-	local _vm_name=""
-
-	# check if passed argument is a file
-	if [ -f ${_vm_arg} ]; then
-		# if it's a file check if it belongs to /etc/init.d, since those config
-		# files start with "kvm." which need to be removed
-		if [ "${_vm_arg%.*}" = "/etc/init.d/kvm" ]; then
-			_vm_name="${_vm_arg##*.}"
-		# otherwise simply remove the path
-		else
-			_vm_name="${_vm_arg##*/}"
-		fi
-	# if it's not a file use the argument as vm_name
-	else
-		_vm_name="${_vm_arg}"
-	fi
-
-	echo ${_vm_name}
 }
 
 # check if qemu guest agent where enabled for vm
@@ -765,8 +744,8 @@ _check_qga(){
 
 vm_list() {
 	if [ -n "${1}" ]; then
-		local vmname=$(_define_vm ${1})
-		_check_running_vm ${vmname} || exit 1
+		local vmname="${1}"
+		_check_running_vm ${vmname}
 	fi
 
 	if [ -z "${vmname}" ]; then
@@ -833,25 +812,24 @@ vm_update() {
 		exit 1
 	fi
 
-	local vmname=$(_define_vm ${_vm})
-	_check_running_vm ${vmname} || exit 1
+	_check_running_vm ${_vm}
 
 	case ${_setting} in
 		mem|memory)
 			echo "Changing Memory to ${_value}MB for ${_vm}" | (loginfo)
-			_vm_edit balloon ${vmname} ${_value}
+			_vm_edit balloon ${_vm} ${_value}
 			;;
 		key|sendkey)
 			echo "Sending key combination: ${_value}" | (loginfo)
-			_vm_edit sendkey ${vmname} ${_value}
+			_vm_edit sendkey ${_vm} ${_value}
 			;;
 		vnc)
 			echo "Changing VNC password to ${_value}" | (loginfo)
-			_vm_edit "set_password vnc" ${vmname} ${_value}
+			_vm_edit "set_password vnc" ${_vm} ${_value}
 			;;
 		spice)
 			echo "Changing SPICE password to ${_value}" | (loginfo)
-			_vm_edit "set_password spice" ${vmname} ${_value}
+			_vm_edit "set_password spice" ${_vm} ${_value}
 			;;
 	esac
 }
@@ -866,8 +844,7 @@ vm_snapshot() {
 		exit 1
 	fi
 
-	local vmname=$(_define_vm ${_vm})
-	_check_running_vm ${vmname} || exit 1
+	_check_running_vm ${_vm}
 
 	case ${_setting} in
 		create)
@@ -876,7 +853,7 @@ vm_snapshot() {
 			else
 				echo "Creating snapshot with default tag for ${_vm}" | (loginfo)
 			fi
-			_vm_edit savevm ${vmname} ${_value}
+			_vm_edit savevm ${_vm} ${_value}
 			;;
 		delete)
 			if [ -z "${_value}" ]; then
@@ -884,12 +861,12 @@ vm_snapshot() {
 				exit 1
 			else
 				echo "Deleting snapshot: ${_value}" | (loginfo)
-				_vm_edit delvm ${vmname} ${_value}
+				_vm_edit delvm ${_vm} ${_value}
 			fi
 			;;
 		list)
 			echo "Listing available snapshots of ${_vm}" | (loginfo)
-			_vm_edit_snapshot_output "info snapshots" ${vmname}
+			_vm_edit_snapshot_output "info snapshots" ${_vm}
 			;;
 		load)
 			if [ -z "${_value}" ]; then
@@ -897,7 +874,7 @@ vm_snapshot() {
 				exit 1
 			else
 				echo "loading snapshot: ${_value}" | (loginfo)
-				_vm_edit loadvm ${vmname} ${_value}
+				_vm_edit loadvm ${_vm} ${_value}
 			fi
 			;;
 	esac
@@ -914,22 +891,21 @@ vm_hw(){
 		exit 1
 	fi
 
-	local vmname=$(_define_vm ${_vm})
-	_check_running_vm ${vmname} || exit 1
+	_check_running_vm ${_vm}
 
-	if ! [ -e "${PID_DIR}/${vmname}.pcie.map" ]; then
+	if ! [ -e "${PID_DIR}/${_vm}.pcie.map" ]; then
 		echo "You need to enable PCIE root bus. Check config" | (logerr)
 		exit 1
 	else
-		local _pcie_ports_count="$(tr -d -c '|\n' < "${PID_DIR}/${vmname}.pcie.map" | awk '{ print length; }')"
+		local _pcie_ports_count="$(tr -d -c '|\n' < "${PID_DIR}/${_vm}.pcie.map" | awk '{ print length; }')"
 	fi
 
 	case ${_setting} in
 		list)
 			local _id="${_pcie_ports_count}"
 			while [ ${_id} -gt 0 ]; do
-				if [ -n "$(cut -d'|' -f${_id} "${PID_DIR}/${vmname}.pcie.map")" ]; then
-					echo "PCIE ID ${_id}: $(cut -d'|' -f${_id} "${PID_DIR}/${vmname}.pcie.map")" | (loginfo)
+				if [ -n "$(cut -d'|' -f${_id} "${PID_DIR}/${_vm}.pcie.map")" ]; then
+					echo "PCIE ID ${_id}: $(cut -d'|' -f${_id} "${PID_DIR}/${_vm}.pcie.map")" | (loginfo)
 				fi
 				_id=$(expr ${_id} - 1)
 			done
@@ -937,7 +913,7 @@ vm_hw(){
 		add)
 			local _id="${_pcie_ports_count}"
 			while [ ${_id} -gt 0 ]; do
-				if [ -z "$(cut -d'|' -f${_id} "${PID_DIR}/${vmname}.pcie.map")" ]; then
+				if [ -z "$(cut -d'|' -f${_id} "${PID_DIR}/${_vm}.pcie.map")" ]; then
 					local _free_port="${_id}"
 					break
 				fi
@@ -955,42 +931,46 @@ vm_hw(){
 						exit 1
 					fi
 					#value1=bridge interface
-					_vm_edit netdev_add ${vmname} bridge,br=${_value1},id=net${_id}
-					_vm_edit device_add ${vmname} virtio-net-pci,netdev=net${_id},bus=pcie-${_id},id=net-${_id}
-					awk -v "id=${_id}" -v "var=virtio-net-pci,${_value1}" -i inplace 'BEGIN{FS=OFS="|"} {if (NR==1) {$id = var }; print}' ${PID_DIR}/${vmname}.pcie.map
+					_vm_edit netdev_add ${_vm} bridge,br=${_value1},id=net${_id}
+					_vm_edit device_add ${_vm} virtio-net-pci,netdev=net${_id},bus=pcie-${_id},id=net-${_id}
+					awk -v "id=${_id}" -v "var=virtio-net-pci,${_value1}" -i inplace 'BEGIN{FS=OFS="|"} {if (NR==1) {$id = var }; print}' ${PID_DIR}/${_vm}.pcie.map
 					;;
 				harddisk)
 					echo "Adding additonal PCI harddisk (${_value1})" | (loginfo)
 					local _format="${_value1##*.}"
+					if [ -z ${_value1} ]; then
+						echo "Error: You need to provide a harddisk file."
+						exit 1
+					fi
 					if ! [ -f ${_value1} ]; then
 						echo "Error: ${value1} is not a regular file" | (logerr)
 						exit 1
 					fi
 					#value1=file
-					_vm_edit "drive_add 0" ${vmname} if=none,file=${_value1},format=${_format},id=disk${_id}
-					_vm_edit device_add ${vmname} virtio-blk-pci,drive=disk${_id},bus=pcie-${_id},id=disk-${_id}
-					awk -v "id=${_id}" -v "var=virtio-blk-pci,${_value1}" -i inplace 'BEGIN{FS=OFS="|"} {if (NR==1) {$id = var }; print}' ${PID_DIR}/${vmname}.pcie.map
+					_vm_edit "drive_add 0" ${_vm} if=none,file=${_value1},format=${_format},id=disk${_id}
+					_vm_edit device_add ${_vm} virtio-blk-pci,drive=disk${_id},bus=pcie-${_id},id=disk-${_id}
+					awk -v "id=${_id}" -v "var=virtio-blk-pci,${_value1}" -i inplace 'BEGIN{FS=OFS="|"} {if (NR==1) {$id = var }; print}' ${PID_DIR}/${_vm}.pcie.map
 					;;
 			esac
 			;;
 		remove)
-			local _dev="$(cut -d'|' -f${_type} ${PID_DIR}/${vmname}.pcie.map | cut -d ',' -f1)"
+			local _dev="$(cut -d'|' -f${_type} ${PID_DIR}/${_vm}.pcie.map | cut -d ',' -f1)"
 			if [ -z "${_dev}" ]; then
 				echo "PCIE-${_type}: doesn't exist: Nothing was removed" | (logwarn)
 			else
-				echo "Removing device ID:${_type} ($(cut -d'|' -f${_type} ${PID_DIR}/${vmname}.pcie.map))" | (loginfo)
+				echo "Removing device ID:${_type} ($(cut -d'|' -f${_type} ${PID_DIR}/${_vm}.pcie.map))" | (loginfo)
 				case ${_dev} in
 					virtio-net-pci)
-						_vm_edit device_del ${vmname} net-${_type}
-						_vm_edit netdev_del ${vmname} net${_type}
+						_vm_edit device_del ${_vm} net-${_type}
+						_vm_edit netdev_del ${_vm} net${_type}
 						;;
 					virtio-blk-pci)
-						_vm_edit device_del ${vmname} disk-${_type}
+						_vm_edit device_del ${_vm} disk-${_type}
 						;;
 				esac
 			fi
 			# _type is her the ID
-			awk -v "id=${_type}" -i inplace 'BEGIN{FS=OFS="|"} {if (NR==1) {$id = "" }; print}' ${PID_DIR}/${vmname}.pcie.map
+			awk -v "id=${_type}" -i inplace 'BEGIN{FS=OFS="|"} {if (NR==1) {$id = "" }; print}' ${PID_DIR}/${_vm}.pcie.map
 			;;
 	esac
 }
@@ -1119,24 +1099,24 @@ delete_network() {
 }
 
 vm_reboot(){
-	local vmname=$(_define_vm ${1})
-	_check_running_vm ${vmname} || exit 1
+	local vmname="${1}"
+	_check_running_vm ${vmname}
 
 	echo "Rebooting ${vmname}"
 	_check_qga ${vmname} && ${QGA} --address=${PID_DIR}/${vmname}.qga.sock reboot
 }
 
 vm_reset(){
-	local vmname=$(_define_vm ${1})
-	_check_running_vm ${vmname} || exit 1
+	local vmname="${1}"
+	_check_running_vm ${vmname}
 
 	echo "Reseting ${vmname}"
 	echo "system_reset" | ${NC} -U -q1 ${PID_DIR}/${vmname}.sock > /dev/null 2>&1
 }
 
 vm_connect(){
-	local vmname=$(_define_vm ${1})
-	_check_running_vm ${vmname} || exit 1
+	local vmname="${1}"
+	_check_running_vm ${vmname}
 
 	echo "Connecting to socket ${PID_DIR}/${vmname}.sock"
 	echo "Use CTRL+D to detach from the socket"
@@ -1145,8 +1125,8 @@ vm_connect(){
 }
 
 vm_freeze_thaw(){
-	local vmname=$(_define_vm ${1})
-	_check_running_vm ${vmname} || exit 1
+	local vmname="${1}"
+	_check_running_vm ${vmname}
 
 	if _check_qga ${vmname}; then
 		local freeze_status="$(${QGA} --address=${PID_DIR}/${vmname}.qga.sock fsfreeze status)"
@@ -1163,8 +1143,8 @@ vm_freeze_thaw(){
 }
 
 vm_pause(){
-	local vmname=$(_define_vm ${1})
-	_check_running_vm ${vmname} || exit 1
+	local vmname="${1}"
+	_check_running_vm ${vmname}
 
 	local vm_status="$(echo "info status" | ${NC} -U -q1 ${PID_DIR}/${vmname}.sock)"
 	vm_status="$(echo "${vm_status}"|tail -n+3|head -n-1|cut -d' ' -f3)"
@@ -1182,8 +1162,8 @@ vm_pause(){
 
 vm_start(){
 	# get VM_NAME
-	VM_NAME="$(_define_vm ${1})"
-	local parameter="${2}"
+	VM_NAME="${1}"
+	local start_parameter="${2}"
 
 	# find out which file to source
 	local vm_config_file="${1}"
@@ -1197,6 +1177,7 @@ vm_start(){
 			exit 1
 		fi
 	fi
+
 	# Start the Virtual Machine
 	echo "Starting ${VM_NAME} ..." | (loginfo)
 
@@ -1206,8 +1187,8 @@ vm_start(){
 	DEFAULT_MSG="Please check your config (${vm_config_file})"
 
 	# override some vm start parameters
-	if [ -n "${parameter}" ]; then
-		case "${parameter}" in
+	if [ -n "${start_parameter}" ]; then
+		case "${start_parameter}" in
 			readonly)
 				VM_ENABLE_SNAPSHOTMODE=true
 				;;
@@ -1226,7 +1207,7 @@ vm_start(){
 				echo "dryrun - only printing boot parameters:" | (logwarn)
 				;;
 			*)
-				echo "Parameter: ${parameter} not known" | (logerr)
+				echo "Parameter: ${start_parameter} not known" | (logerr)
 				;;
 		esac
 	fi
@@ -1325,10 +1306,9 @@ __vm_cleanup_net(){
 }
 
 vm_kill(){
-	local vmname=$(_define_vm ${1})
-	_check_running_vm ${vmname} || exit 1
-
+	local vmname="${1}"
 	local KVM_PID="$(< ${PID_DIR}/${vmname}.pid)"
+	_check_running_vm ${vmname}
 
 	# check if guest PID is actually running
 	if (kill -0 ${KVM_PID} >/dev/null 2>&1); then
@@ -1341,17 +1321,17 @@ vm_kill(){
 }
 
 vm_stop(){
-	local vmname=$(_define_vm ${1})
-	_check_running_vm ${vmname} || exit 1
+	local vmname="${1}"
+	local KVM_PID="$(< ${PID_DIR}/${vmname}.pid)"
+	_check_running_vm ${vmname}
 
 	# set default kill wait to 80 seconds
 	[ -z "${VM_KILL_WAIT}" ] && VM_KILL_WAIT=80
-	local KVM_PID="$(< ${PID_DIR}/${vmname}.pid)"
 
 	# check if guest PID is actually running
 	if (kill -0 ${KVM_PID} >/dev/null 2>&1); then
 		echo "Stopping ${vmname} ..." | (loginfo)
-		# sending via nc (netcat) the shutdown command
+		# sending system_powerdown via nc (netcat)
 		echo "system_powerdown" | ${NC} -U -q1 ${PID_DIR}/${vmname}.sock > /dev/null 2>&1
 		# waiting for system to shutdown
 		echo "Waiting ${VM_KILL_WAIT} seconds for ${vmname} to shutdown." | (loginfon)
@@ -1369,8 +1349,8 @@ vm_stop(){
 				__vm_cleanup "${vmname}"
 				break
 			fi
-			# send system_powerdown every 20 seconds
-			if [ $(( ${cnt} % 20)) = 0 ]; then
+			# send system_powerdown every 10 seconds
+			if [ $(( ${cnt} % 10)) = 0 ]; then
 				echo "system_powerdown" | ${NC} -U -q1 ${PID_DIR}/${vmname}.sock > /dev/null 2>&1
 			fi
 			sleep 2
@@ -1393,31 +1373,31 @@ usage() {
 	echo -e "start,stop and manipulating qemu vms"
 	echo
 	echo -e "guest start/stopping"
-	echo -e "qvm b|k|s|r|x|f|l|c|p vmname|/path/to/configfile"
+	echo -e "qvm b|k|s|r|x|f|l|c|p [vmname] boot-options"
 	echo -e " b|boot\t\t\tboot virtual machine config file"
-	echo -e " k|kill\t\t\tkill virtual machine instantly"
+	echo -e " k|kill\t\t\tkill virtual machine PID"
 	echo -e " s|stop\t\t\tstop virtual machine"
-	echo -e " r|reboot\t\trestart virtual machine (via qemu guest agent)"
 	echo -e " x|reset\t\treset virtual machine"
+	echo -e " r|reboot\t\trestart virtual machine (via qemu guest agent)"
 	echo -e " f|freeze\t\tfreeze|unfreeze guest filesystem (via qemu guest agent)"
 	echo -e " l|list\t\t\tlist all virtual machines|show details of [vmname]"
 	echo -e " c|connect\t\tconnect to the unix socket of [vmname]"
 	echo -e " p|pause\t\tpause/unpause qemu virtualization"
 	echo
 	echo -e "vm/guest modify"
-	echo -e "qvm update vmname memory|sendkey|[spice|vnc] value"
+	echo -e "qvm update [vmname] memory|sendkey|[spice|vnc] value"
 	echo -e " memory 4096\t\tchange the memory of [vmname] via ballooing"
 	echo -e " sendkey ctrl-alt-f1\tsend key combination to [vmname] (like ctrl-alt-f1)"
 	echo -e " vnc|spice P4ssw0rd\tchange vnc or spice password of [vmname]"
 	echo
 	echo -e "vm/guest add/remove virtual hardware"
-	echo -e "qvm hw vmname add|remove|list [network|harddisk] [value]"
+	echo -e "qvm hw [vmname] add|remove|list [network|harddisk] [value]"
 	echo -e " add [value]\t\tadd a pci [network|harddisk] device to the guest"
 	echo -e " remove [value]\t\tremove a pci device from the guest"
 	echo -e " list\t\t\tlist added pci devices of the guest"
 	echo
 	echo -e "vm/guest snapshoting"
-	echo -e "qvm snapshot vmname create|delete|info|load [value]"
+	echo -e "qvm snapshot [vmname] create|delete|info|load [value]"
 	echo -e " create [value]\t\tcreate a new snapshot called [value(optional)]"
 	echo -e " delete [value]\t\tdelete snapshot [value]"
 	echo -e " snapshot list\t\tlist available snapshots"
