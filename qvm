@@ -954,23 +954,23 @@ vm_hw(){
 			esac
 			;;
 		remove)
-			local _dev="$(cut -d'|' -f${_type} ${PID_DIR}/${_vm}.pcie.map | cut -d ',' -f1)"
+			local _dev="$(cut -d'|' -f${_type:0:1} ${PID_DIR}/${_vm}.pcie.map | cut -d ',' -f1)"
 			if [ -z "${_dev}" ]; then
-				echo "PCIE-${_type}: doesn't exist: Nothing was removed" | (logwarn)
+				echo "${_type}: doesn't exist: Nothing was removed" | (logwarn)
 			else
-				echo "Removing device ID:${_type} ($(cut -d'|' -f${_type} ${PID_DIR}/${_vm}.pcie.map))" | (loginfo)
+				echo "Removing device ${_type}" | (loginfo)
 				case ${_dev} in
 					virtio-net-pci)
-						_vm_edit device_del ${_vm} net-${_type}
-						_vm_edit netdev_del ${_vm} net${_type}
+						_vm_edit device_del ${_vm} net-${_type:0:1}
+						_vm_edit netdev_del ${_vm} net${_type:0:1}
 						;;
 					virtio-blk-pci)
-						_vm_edit device_del ${_vm} disk-${_type}
+						_vm_edit device_del ${_vm} disk-${_type:0:1}
 						;;
 				esac
 			fi
 			# _type is her the ID
-			awk -v "id=${_type}" -i inplace 'BEGIN{FS=OFS="|"} {if (NR==1) {$id = "" }; print}' ${PID_DIR}/${_vm}.pcie.map
+			awk -v "id=${_type:0:1}" -i inplace 'BEGIN{FS=OFS="|"} {if (NR==1) {$id = "" }; print}' ${PID_DIR}/${_vm}.pcie.map
 			;;
 	esac
 }

@@ -158,14 +158,26 @@ dryrun       dryrun: don't boot the vm but print out the startparameters"
 						COMPREPLY=($(compgen -W "$(echo "${snapshots}")" -- ${cur}))
 					;;
 				load)
-					local snapshots="$(echo "info snapshots" | nc -U -q1 /run/user/2000/${COMP_WORDS[COMP_CWORD-2]}.sock)"
+					local snapshots="$(echo "info snapshots" | nc -U -q1 /run/user/$(id -u)/${COMP_WORDS[COMP_CWORD-2]}.sock)"
 					COMPREPLY=($(compgen -W "$(echo "${snapshots}"|tail -n+5|head -n-1|tr -s \ '' | cut -d' ' -f2|tr '\n' ' ')" -- ${cur}))
 					;;
 				add)
 					COMPREPLY=($(compgen -W "harddisk network" -- ${cur}))
 					;;
 				remove)
-					COMPREPLY=($(compgen -W "ID1 ID2 ID3 ID4" -- ${cur}))
+					local devices="$(
+						i=1
+						for x in $(cat /run/user/$(id -u)/${COMP_WORDS[COMP_CWORD-2]}.pcie.map \
+						| tr '|' '\n' \
+						| head -n -1 \
+						| nl -w1 -s'-' -b a);
+							do if [ -n "$(echo $x| cut -d'-' -f2)" ]; then
+								echo $x;
+							fi;
+							(( i+= 1 ))
+						done | tr '\n' ' '
+						)"
+					COMPREPLY=($(compgen -W "$(echo "${devices}")" -- ${cur}))
 					;;
 			esac
 			;;
