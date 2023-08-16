@@ -1,83 +1,85 @@
 # qemu-init
 
-qemu-init contains scripts for starting, stoping and manipulating qemu virtual machines. It also includes init scripts for `openrc`.  
-Features include:
+This repository contains scripts for starting, stopping and manipulation `qemu` virtual machines.  
 
-- start / stop / reset qemu virtual machines
+### Motivation
+Initially i've wrote this script in order to have a `openrc` init script to start and stop virtual machines without the the need to depend on `app-emulation/libvirt`. However, as I started to play more with virtual machines directly (and not as an system service), i've decided to create `qvm` which is a simple tool to work with virtual machines directly.  
+The init script still require `qvm` to be present for starting and stopping vm's as a service, but `qvm` can be used as a standalone tool perfectly well.
+
+## qvm (qemu vm manager)
+This is a bash script for managing qemu virtual machines. Features include:
+- start / stop / reset / freeze qemu virtual machines
 - modify guests
 	- set vnc/spice password
 	- change memory (ballooning)
 	- send key strokes
 - modify guests hardware
-	- add / remove pcie network adapter / harddisks
+	- add / remove pcie devices (network adapters and/or hard-disks)
 	- list connected pcie devices
 - guest snapshoting
 	- create / remove snapshots
-	- list availables snapshots
+	- list available snapshots
 	- load snapshots as needed
 - host network
 	- add / remove tap interfaces on the host
 
+### Dependencies
+`qvm` require to have following tools installed:
+- app-emulation/qemu
+- net-misc/bridge-utils
+- net-analyzer/openbsd-netcat or net-misc/socat
+- sys-apps/iproute2
 
-### kvm.init & kvm.confd
-`kvm.init` is the `openrc` init script. This can be used to create system services to start virtual machines via `openrc`.  
-`kvm.confd` is the default configuration file for the `kvm.init` script.  
-There is also a `default.config` included which can be used as a example configuration for new virtual machines.
-### qvm
-qvm (qemu vm manager) is used for stopping, starting, editing or simply listing virtual machines. It can be run as root and non-root users to play around with virtual machines.
-```code
-qvm
-start/stop and manipulating qemu vms
-
-guest start/stopping
-qvm b|s|r|x|f|l|c|p vmname|/path/to/configfile
- b|boot					boot virtual machine config file
- s|stop					stop virtual machine
- r|reboot				restart virtual machine (via qemu guest agent)
- x|reset				reset virtual machine
- f|freeze				freeze|unfreeze guest filesystem (via qemu guest agent)
- l|list					list all virtual machines|show details of [vmname]
- c|connect				connect to the unix socket of [vmname]
- p|pause				pause/unpause qemu virtualization
-
-vm/guest modify
-qvm update vmname memory|sendkey|[spice|vnc] value
- memory 4096			change the memory of [vmname] via ballooing
- sendkey ctrl-alt-f1	send key combination to [vmname] (like ctrl-alt-f1)
- vnc|spice P4ssw0rd		change vnc or spice password of [vmname]
-
-vm/guest hw modify
-qvm hw vmname add|remove|list [network|harddisk] [value]
- add [value]			add a pci [network|harddisk] device to the guest
- remove [value]			remove a pci device from the guest
- list					list added pci devices of the guest
-
-vm/guest snapshoting
-qvm snapshot vmname create|delete|info|load [value]
- create [value]			create a new snapshot called [value(optional)]
- delete [value]			delete snapshot [value]
- snapshot list			list available snapshots
- load [value]			load snapshot [value]
-
-host network
-qvm network add|del tap-name,[bridge-dev(br0)]
- add					create a new tap device and link it to [bridge-dev]
- del					remove a tap device
-```
 ### qvm-completion.bash
-`qvm` also comes with a completion script in order to easily work with `qvm`.
+`qvm` comes with a nice bash completion too.
+
+## kvm.init & kvm.confd
+`kvm.init` is the `openrc` init script. This can be used to create system services to start virtual machines via `openrc`. `kvm.init` requires `qvm` in order to start and stop virtual machines.  
+`kvm.confd` is the default configuration file for the `kvm.init` script.  
+
+### default.config
+There is also a `default.config` included which can be used as an example configuration for new virtual machines. Configuration files are usually put into `/etc/qvm/`. However the path can be changed (see below).
+
 
 ## Installation
-In order to use these script simply copy **qvm** into `/usr/bin/`. If you're using the openrc init system and want to start vms as a service simply put **kvm.init** into `/etc/init.d/` and symlink vms to it. configuration files need to be installed in `CONF_PATH` (default is /etc/qvm/), or can be set in `/etc/conf.d/kvm`.
-For example:  
-```code
-cp kvm.init /etc/init.d/
-cp kvm.confd /etc/conf.d/kvm
+
+### qvm
+In order to use **qvm**, simply put it into `/usr/bin/`. The completion should be put into `/usr/share/bash-completionk/completions/` (on a gentoo box).
+**qvm** first checks if there is a `~/.qvm.conf` which it would source if available. In this file you can set the default configuration path for virtual machines, as well as other settings:
+
+``` sh
 cp qvm /usr/bin/
 chmod +x /usr/bin/qvm
-cp default.config /etc/qvm/kvm.windows
+```
+
+Create a new configuration file:
+``` sh
+touch ~/.qvm.conf
+```
+
+- `CFG_DIR="~/vmcfg"` set's the default path for vm configuration files
+- `VM_KILL_WAIT="20"` set's the default time to wait until a vm should be killed (after initiating a shutdown)
+- `TAP_DELETE=false` defines if created TAP devices should be removed from the host when a vm shut down.
+
+**qvm** usually doesn't need any root privileges. However this also depends on the VM config. For example, TAP devices require root privileges to be created, which `qvm` kindly would ask for.  
+The `default.config` work with bridge devices, which itself are TAP devices again but are handled by `qemu` directly. Here it's once required to allow `qemu` for which bridge devices it can create tap devices for. This can be configured in `/etc/qemu/bridge.conf`. After that users can create/delete TAP devices without root privileges.
+
+If **qvm** is run as `root` user it also looks for an configuration in the root's home directory. In the absence of the configuration file it tries to use the default config directory under `/etc/qvm` - were config files of service vm's should be put to.
+
+### init scripts
+If you're using the openrc init system and want to start vms as a service simply put **kvm.init** into `/etc/init.d/` and symlink vms to it. configuration files need to be installed in `CONF_PATH` (default is /etc/qvm/), or can be set in `/etc/conf.d/kvm`.
+For example:  
+``` sh
+cp kvm.init /etc/init.d/
+cp kvm.confd /etc/conf.d/kvm
+```
+Note that `qvm` is required to be installed.
+
+To add a new vm as a service:
+``` sh
+cp default.config /etc/qvm/kvm.gentoo
 cd /etc/init.d/
-ln -s kvm.init kvm.windows
+ln -s kvm.init kvm.gentoo
 ```
 ## License
 All scripts are free software. You can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; either version 2 of the License, or (at your option) any later version.
