@@ -1436,28 +1436,3 @@ else
 		*) echo "Unknown command"; exit 1 ;;
 	esac
 fi
-
-
-# qvm 
-#		boot
-#		stop
-#		kill
-# 	list
-#		reset
-#		connect
-
-# 	vm
-#			(update)
-#			.memory
-#			.sendkey
-#			.vnc
-#			.spice
-# 		hw
-#			snapshot
-#			pause
-# 		freeze
-#			reboot
-
-# 	host
-#			network
-#			config
