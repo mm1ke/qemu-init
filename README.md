@@ -45,7 +45,7 @@ There is also a `default.config` included which can be used as an example config
 
 ### qvm
 In order to use **qvm**, simply put it into `/usr/bin/`. The completion should be put into `/usr/share/bash-completionk/completions/` (on a gentoo box).
-**qvm** first checks if there is a `~/.qvm.conf` which it would source if available. In this file you can set the default configuration path for virtual machines, as well as other settings:
+**qvm** first checks if there is a `~/.config/qvm/qvm.conf` which it would source if available. In this file you can set the default configuration path for virtual machines, as well as other settings:
 
 ``` sh
 cp qvm /usr/bin/
@@ -54,7 +54,7 @@ chmod +x /usr/bin/qvm
 
 Create a new configuration file:
 ``` sh
-touch ~/.qvm.conf
+touch ~/.config/qvm/qvm.conf
 ```
 
 - `CFG_DIR="~/vmcfg"` set's the default path for vm configuration files

@@ -27,7 +27,7 @@ MAX_QTAP=30
 DRYRUN=false
 TAP_DELETE=true
 
-[ -e ~/.qvm.conf ] && source ~/.qvm.conf
+[ -e ~/.config/qvm/qvm.conf ] && source ~/.config/qvm/qvm.conf
 
 # programs / dependencies
 BRIDGE="/sbin/bridge"					# sys-apps/iproute2
