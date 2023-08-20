@@ -405,9 +405,7 @@ _cfg_audio_check() {
 		_vm_audio+=("${i}")
 	done
 
-
 	local _audio_id=0
-
 	if [ -n "${_vm_audio}" ]; then
 		for single_audio in "${_vm_audio[@]}"; do
 			local audio_dev="$(echo ${single_audio}|cut -d';' -f1)"
@@ -466,6 +464,7 @@ _cfgcheck(){
 		_vm_dev+=("${i}")
 	done
 
+	# directly add all vm_devices additions to the config. Nothing to check since simply anything can be added.
 	for single_dev in "${_vm_dev[@]}"; do
 		VM_DEV="${VM_DEV} ${single_dev}"
 	done
@@ -506,7 +505,7 @@ _cfgcheck(){
 		SET_USER="false"
 	fi
 
-	# check if SDL/GTK can be enabled (needs .Xauthority file)
+	# check if SDL can be enabled (needs .Xauthority file)
 	_check_xauth() {
 		if [ "${VM_DISPLAY_MODE}" == "sdl" ]; then
 			if ! [ -e /home/${1}/.Xauthority ]; then
