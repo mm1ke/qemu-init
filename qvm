@@ -534,21 +534,6 @@ _cfgcheck(){
 		VM_ACCEL="kvm"
 	fi
 
-	# arch spezific configuration
-	case ${VM_ARCH} in
-		#arm)
-		#	# arm has only smc91c111 - see qemu-system-arm -net nic,model=?
-		#	VM_NET_DRV="smc91c111"
-		#	;;
-		mips)
-			# mips only supports up to 256mb ram
-			if [ ${VM_MEMORY} -gt 256 ]; then
-				VM_MEMORY=256
-				echo "MIPS only supports up to 256MB ram. ${DEFAULT_MSG}" | (logwarn)
-			fi
-			;;
-	esac
-
 	# cdrom checks
 	if [ -n "${VM_CDROM}" ]; then
 		if ! [ -e "${VM_CDROM}" ]; then
@@ -710,6 +695,7 @@ _myconfig(){
 	fi
 
 	# add qvm parameters (not in configfiles)
+	# used to override default values whten starting vms
 	[ -z "${VM_PARAMETER}" ] ||	myconfig+=(${VM_PARAMETER})
 }
 
