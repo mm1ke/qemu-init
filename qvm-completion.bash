@@ -49,7 +49,7 @@ function _qvm_comp_list(){
 	if ! [ $(id -u) = 0 ]; then
 		local pid_dir="/run/user/$(id -u)"
 	fi
-	[ -e ~/.qvm.conf ] && source ~/.qvm.conf
+	[ -e ~/.config/qvm/qvm.conf ] && source ~/.config/qvm/qvm.conf
 
 	local _qvm_comp_cmd_update="
 memory       change vm memory
