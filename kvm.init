@@ -11,29 +11,27 @@ description_reset="resets the virtual maschine"
 command="/usr/bin/qvm"
 
 VM_NAME=${RC_SVCNAME#*.}
-[ -z "${CONF_PATH}" ] && CONF_PATH="/etc/qvm/"
-VMPATH="${CONF_PATH}/${VM_NAME}"
 
 depend(){
 	need net
 }
 
 reboot(){
-	${command} reboot ${VMPATH}
+	${command} reboot ${VM_NAME}
 	eend $?
 }
 
 reset(){
-	${command} reset ${VMPATH}
+	${command} reset ${VM_NAME}
 	eend $?
 }
 
 start(){
-	${command} boot ${VMPATH}
+	${command} boot ${VM_NAME}
 	eend $?
 }
 
 stop(){
-	${command} stop ${VMPATH}
+	${command} stop ${VM_NAME}
 	eend 0
 }
