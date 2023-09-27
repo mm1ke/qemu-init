@@ -928,8 +928,12 @@ vm_hw(){
 						exit 1
 					fi
 					if ! [ -f ${_value1} ]; then
-						echo "Error: ${value1} is not a regular file" | (logerr)
-						exit 1
+						if ! [ -f ${IMG_DIR}/${_value1} ]; then
+							echo "Error: ${_value1} is not a regular file" | (logerr)
+							exit 1
+						else
+							_value1="${IMG_DIR}/${_value1}"
+						fi
 					fi
 					#value1=file
 					_vm_edit "drive_add 0" ${_vm} if=none,file=${_value1},format=${_format},id=disk${_id}

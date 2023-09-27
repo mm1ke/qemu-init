@@ -166,15 +166,14 @@ dryrun       dryrun: don't boot the vm but print out the startparameters"
 					;;
 				remove)
 					local devices="$(
-						i=1
 						for x in $(cat /run/user/$(id -u)/${COMP_WORDS[COMP_CWORD-2]}.pcie.map \
 						| tr '|' '\n' \
 						| head -n -1 \
 						| nl -w1 -s'-' -b a);
+							# check if the second part of the string is empty (there is always a first part because of nl)
 							do if [ -n "$(echo $x| cut -d'-' -f2)" ]; then
 								echo $x;
 							fi;
-							(( i+= 1 ))
 						done | tr '\n' ' '
 						)"
 					COMPREPLY=($(compgen -W "$(echo "${devices}")" -- ${cur}))
@@ -185,7 +184,13 @@ dryrun       dryrun: don't boot the vm but print out the startparameters"
 			case ${prev} in
 				network)
 					COMPREPLY=($(compgen -W "$(grep -v -e '^$' -e '^#' /etc/qemu/bridge.conf | cut -d' ' -f2|sort -u)" -- ${cur}))
-				;;
+					;;
+				harddisk)
+					if [ -n "${IMG_DIR}" ]; then
+						#local _vms="$(find ${CFG_DIR} -type f -printf '%f\n'|sort)"
+						__qvm_comp_with_text "$(find ${IMG_DIR} -type f -printf '%f\n'|sort)"
+					fi
+					;;
 			esac
 			;;
 		*)
