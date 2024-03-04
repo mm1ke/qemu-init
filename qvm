@@ -1179,6 +1179,7 @@ vm_start(){
 	if [ -n "${start_parameter}" ]; then
 		case "${start_parameter}" in
 			readonly)
+				echo "starting in snapshot mode" | (logwarn)
 				VM_ENABLE_SNAPSHOTMODE=true
 				;;
 			pxeboot)
@@ -1190,6 +1191,10 @@ vm_start(){
 			fullscreen)
 				echo "starting vm in fullscreen" | (logwarn)
 				VM_PARAMETER="-full-screen"
+				;;
+			nodisplay)
+				echo "disable display output" | (logwarn)
+				VM_DISPLAY_MODE=""
 				;;
 			dryrun)
 				DRYRUN=true
