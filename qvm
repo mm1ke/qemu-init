@@ -1238,16 +1238,8 @@ vm_start(){
 			create_network "${NET_INT[@]}"
 		fi
 
-		# here is the vm actually started via qemu
-		# TODO: wayland without Xauthority file ??
-		#
-		if [ $(id -u) = 0 ] && ! [ ${VM_DISPLAY_MODE} = "none" ]; then
-			DISPLAY=:0 #XAUTHORITY=/home/${VM_USER}/.Xauthority \
-				TMPDIR=${TMP_DIR} ${VM_QEMU_BIN} "${myconfig[@]}" >/dev/null
-		else
-			TMPDIR=${TMP_DIR} ${VM_QEMU_BIN} "${myconfig[@]}" >/dev/null
-		fi
-		#TMPDIR=${TMP_DIR} ${VM_QEMU_BIN} "${myconfig[@]}" >/dev/null
+		# start the actual vm
+		TMPDIR=${TMP_DIR} ${VM_QEMU_BIN} "${myconfig[@]}" >/dev/null
 
 		# remove tap devices if the guest system couldn't be started
 		if [ "$?" != "0" ]; then
