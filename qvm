@@ -35,6 +35,7 @@ IP="/bin/ip"									# sys-apps/iproute2
 NC="/usr/bin/nc"							# net-analyzer/openbsd-netcat
 QGA="/usr/bin/qemu-ga-client"	# app-emulation/qemu[pyhton]
 LSOF="/usr/bin/lsof"					# sys-process/lsof
+VFSD="/usr/libexec/virtiofsd"	# app-emulation/virtiofsd
 
 # log settings
 NOCOLOR='\e[0m'			# no color
@@ -177,7 +178,7 @@ _cfg_network_check(){
 						_dry_run_check || return 1
 					fi
 					# check for max_vms
-					if [ ${_net_id} -ge ${MAX_QTAP} ]; then
+						if [ ${_net_id} -ge ${MAX_QTAP} ]; then
 						echo "Maximum number of network connections reached. Please increase the MAX_QTAP variable." | (logerr)
 						_dry_run_check || return 1
 					fi
@@ -307,6 +308,45 @@ _cfg_9p_check() {
 			echo "Adding 9P mount-tag: \"${share_name}\" sharing \"${share_path}\" with security \"${share_secm}\"" | (loginfo)
 
 			_9p_id=$(expr ${_9p_id} + 1)
+		done
+	fi
+}
+
+_cfg_vfsd_check() {
+	# virtiofsd directory checks
+	declare -a _tmp_vm_vfsdshare=("${VM_VFSD_SHARE}" "${VM_VFSD_SHARE0}" "${VM_VFSD_SHARE1}" "${VM_VFSD_SHARE2}" "${VM_VFSD_SHARE3}" \
+		"${VM_VFSD_SHARE4}" "${VM_VFSD_SHARE5}" "${VM_VFSD_SHARE6}" "${VM_VFSD_SHARE7}" "${VM_VFSD_SHARE8}" "${VM_VFSD_SHARE9}")
+	declare -a _vm_vfsdshare
+	local i
+	for i in "${_tmp_vm_vfsdshare[@]}"; do
+		if [ -z "${i}" ]; then
+			continue
+		fi
+		_vm_vfsdshare+=("${i}")
+	done
+	local _vfsd_id=0
+
+
+	if [ -n "${_vm_vfsdshare}" ]; then
+		for single_vfsd in "${_vm_vfsdshare[@]}"; do
+			local share_name="$(echo ${single_vfsd}|cut -d';' -f1)"
+			local share_path="$(echo ${single_vfsd}|cut -sd';' -f2)"
+
+			if [ -z ${share_name} ] || ! [ -e ${share_path} ]; then
+				echo "No name given or Path does not exist. ${DEFAULT_MSG}" | (logerr)
+				_dry_run_check || return 1
+			fi
+
+			VM_VFSD="${VM_VFSD} \
+				-chardev socket,id="${VM_NAME}_vfsd_${_vfsd_id}",path=${PID_DIR}/${VM_NAME}-vfsd-${share_name} \
+				-device vhost-user-fs-pci,queue-size=1024,chardev="${VM_NAME}_vfsd_${_vfsd_id}",tag=${share_name}"
+
+			VM_VFSD_START+=( "--socket-path=${PID_DIR}/${VM_NAME}-vfsd-${share_name} --shared-dir ${share_path} --cache always --syslog" )
+
+			# print out virtiofsd settings
+			echo "Adding virtiofsd mount-tag: \"${share_name}\" sharing \"${share_path}\"" | (loginfo)
+
+			_vfsd_id=$(expr ${_vfsd_id} + 1)
 		done
 	fi
 }
@@ -544,6 +584,7 @@ _cfgcheck(){
 	_cfg_harddisk_check || return 1
 	_cfg_network_check || return 1
 	_cfg_9p_check || return 1
+	_cfg_vfsd_check || return 1
 	_cfg_remote_access_check || return 1
 	_cfg_audio_check || return 1
 }
@@ -556,8 +597,8 @@ _myconfig(){
 		-monitor unix:${PID_DIR}/${VM_NAME}.sock,server=on,wait=off
 		-pidfile ${PID_DIR}/${VM_NAME}.pid
 		-device virtio-balloon
-		-m ${VM_MEMORY:-512}
-		-smp ${VM_SMP:-1}
+		-m ${VM_MEMORY:-1G}
+		-smp ${VM_SMP:-2}
 		-machine ${VM_MACHINE:-pc}
 		-k ${VM_LC:-de}
 		-cpu ${VM_CPU:-host}
@@ -587,7 +628,7 @@ _myconfig(){
 	# qemu-vdagent and spicevmc
 	# if display mode is set to gtk we choose to use qemu-vdagent for clipboard
 	# sharing. this however disables it for spice connections
-	if [ ${VM_DISPLAY_MODE} = "gtk" ]; then
+	if $(echo ${VM_DISPLAY_MODE}| grep -q ^gtk); then
 		(${VM_ENABLE_VIRTSERIAL:-true}) && myconfig+=(
 			-chardev qemu-vdagent,id=vdagent,name=vdagent,clipboard=on,mouse=off \
 			-device virtio-serial,max_ports=2 \
@@ -610,6 +651,12 @@ _myconfig(){
 	(${VM_ENABLE_QMP:-false}) && myconfig+=(
 		-chardev socket,id=${VM_NAME}-qmp,path=${PID_DIR}/${VM_NAME}.qmp.sock,server=on,wait=off
 		-mon chardev=${VM_NAME}-qmp,mode=control,pretty=on
+	)
+	[ -n "${VM_VFSD}" ] && VM_ENABLE_VPMEM=true
+	# virtio pmem device
+	(${VM_ENABLE_VPMEM:-false}) && myconfig+=(
+		-object memory-backend-file,id=mem1,size=${VM_MEMORY:-1G},mem-path=/dev/shm/,share=on
+		-numa node,memdev=mem1
 	)
 
 	# enable pcie port
@@ -675,6 +722,8 @@ _myconfig(){
 	[ -z "${VM_NET}" ] || myconfig+=(${VM_NET})
 	# 9p shares
 	[ -z "${VM_9P}" ] || myconfig+=(${VM_9P})
+	# virtiofsd shares
+	[ -z "${VM_VFSD}" ] || myconfig+=(${VM_VFSD})
 	# display settings
 	[ -z "${VM_VGA}" ] || myconfig+=(-vga ${VM_VGA})
 	# audio settings
@@ -1227,6 +1276,12 @@ vm_start(){
 			exit 1
 		fi
 
+		# create virtiofsd shares
+		local vfsd
+		for vfsd in "${VM_VFSD_START[@]}"; do
+			${VFSD} ${vfsd} &
+		done
+
 		# create empty pciemap file
 		local _pcie_ports="${VM_PCIE_PORTS:-0}"
 		while [ ${_pcie_ports:-0} -gt 0 ]; do
@@ -1348,6 +1403,7 @@ vm_stop(){
 	fi
 
 	__vm_cleanup_net "${vmname}"
+	rm ${PID_DIR}/${vmname}-vfsd*
 
 	# for some reason when running as root qemu doesn't clean up pid/sock files
 	# after we stopped a vm. So lets clean them up manually.
