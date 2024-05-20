@@ -331,17 +331,21 @@ _cfg_vfsd_check() {
 		for single_vfsd in "${_vm_vfsdshare[@]}"; do
 			local share_name="$(echo ${single_vfsd}|cut -d';' -f1)"
 			local share_path="$(echo ${single_vfsd}|cut -sd';' -f2)"
+			local share_cache="$(echo ${single_vfsd}|cut -sd';' -f3)"
 
 			if [ -z ${share_name} ] || ! [ -e ${share_path} ]; then
 				echo "No name given or Path does not exist. ${DEFAULT_MSG}" | (logerr)
 				_dry_run_check || return 1
 			fi
 
+			# default settings
+			share_cache=${share_cache:-auto}
+
 			VM_VFSD="${VM_VFSD} \
 				-chardev socket,id="${VM_NAME}_vfsd_${_vfsd_id}",path=${PID_DIR}/${VM_NAME}-vfsd-${share_name} \
 				-device vhost-user-fs-pci,queue-size=1024,chardev="${VM_NAME}_vfsd_${_vfsd_id}",tag=${share_name}"
 
-			VM_VFSD_START+=( "--socket-path=${PID_DIR}/${VM_NAME}-vfsd-${share_name} --shared-dir ${share_path} --cache always --syslog" )
+			VM_VFSD_START+=( "--socket-path=${PID_DIR}/${VM_NAME}-vfsd-${share_name} --shared-dir ${share_path} --cache ${share_cache} --syslog" )
 
 			# print out virtiofsd settings
 			echo "Adding virtiofsd mount-tag: \"${share_name}\" sharing \"${share_path}\"" | (loginfo)
@@ -1403,7 +1407,7 @@ vm_stop(){
 	fi
 
 	__vm_cleanup_net "${vmname}"
-	rm ${PID_DIR}/${vmname}-vfsd*
+	rm -f ${PID_DIR}/${vmname}-vfsd*
 
 	# for some reason when running as root qemu doesn't clean up pid/sock files
 	# after we stopped a vm. So lets clean them up manually.
