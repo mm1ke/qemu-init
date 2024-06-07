@@ -599,7 +599,7 @@ _myconfig(){
 	myconfig=(
 		-name ${VM_NAME}
 		-monitor unix:${PID_DIR}/${VM_NAME}.sock,server=on,wait=off
-		-pidfile ${PID_DIR}/${VM_NAME}.pid
+		-pidfile ${PID_DIR}/${VM_NAME}.qvm.pid
 		-device virtio-balloon
 		-m ${VM_MEMORY:-1G}
 		-smp ${VM_SMP:-2}
@@ -757,7 +757,7 @@ _check_running_vm() {
 	# if the executing user is not root we only see vm's of the user since the PID
 	# files for system vm's are at different place and usually not readable for
 	# users
-	if ! [ -f "${PID_DIR}/${_vm}.pid" ]; then
+	if ! [ -f "${PID_DIR}/${_vm}.qvm.pid" ]; then
 		echo "\"${_vm}\" not running!" | (loginfo)
 		exit 1
 	fi
@@ -808,16 +808,16 @@ vm_list() {
 		if [ -n "${CFG_DIR}" ]; then
 			echo "User VMs:"
 			for i in $(find ${CFG_DIR} -type f); do
-				if [ -e ${PID_DIR}/${i##*/}.pid ]; then
-					echo "${i##*/} (PID: $(cat ${PID_DIR}/${i##*/}.pid))" | (loginfo)
+				if [ -e ${PID_DIR}/${i##*/}.qvm.pid ]; then
+					echo "${i##*/} (PID: $(cat ${PID_DIR}/${i##*/}.qvm.pid))" | (loginfo)
 				else
 					echo "${i##*/}" | (logerr)
 				fi
 			done
 		fi
 	else
-		if [ -e "${PID_DIR}/${vmname}.pid" ]; then
-			local _vm_pid="$(cat /${PID_DIR}/${vmname}.pid)"
+		if [ -e "${PID_DIR}/${vmname}.qvm.pid" ]; then
+			local _vm_pid="$(cat /${PID_DIR}/${vmname}.qvm.pid)"
 			local _vm_starttime="$(ps -o "lstart=" -p ${_vm_pid})"
 			local _vm_uptime="$(ps -o "etime=" -p ${_vm_pid}|tr -d '[:space:]')"
 			local _vm_spice_settings="$(echo "info spice" \
@@ -1352,7 +1352,7 @@ __vm_cleanup_net(){
 
 vm_kill(){
 	local vmname="${1}"
-	local KVM_PID="$(< ${PID_DIR}/${vmname}.pid)"
+	local KVM_PID="$(< ${PID_DIR}/${vmname}.qvm.pid)"
 	_check_running_vm ${vmname}
 
 	# check if guest PID is actually running
@@ -1367,7 +1367,7 @@ vm_kill(){
 
 vm_stop(){
 	local vmname="${1}"
-	local KVM_PID="$(< ${PID_DIR}/${vmname}.pid)"
+	local KVM_PID="$(< ${PID_DIR}/${vmname}.qvm.pid)"
 	_check_running_vm ${vmname}
 
 	# set default kill wait to 80 seconds

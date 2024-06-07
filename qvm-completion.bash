@@ -110,7 +110,7 @@ dryrun       dryrun: don't boot the vm but print out the startparameters"
 					fi
 					;;
 				stop|s|reboot|r|reset|x|freeze|f|list|l|connect|c|update|u|snapshot|e|pause|p|hw|h|kill|k)
-					COMPREPLY=($(compgen -W "$(find ${pid_dir} -name *.pid -printf '%f\n'|rev|cut -d'.' -f2-|rev)" -- ${cur}))
+					COMPREPLY=($(compgen -W "$(find ${pid_dir} -name *.qvm.pid -printf '%f\n'|rev|cut -d'.' -f3-|rev)" -- ${cur}))
 					;;
 				network|n)
 					COMPREPLY=($(compgen -W "add del" -- ${cur}))
