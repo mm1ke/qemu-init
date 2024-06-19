@@ -26,6 +26,7 @@
 MAX_QTAP=30
 DRYRUN=false
 TAP_DELETE=true
+AUTOSTART_SPICY=false
 
 [ -e ~/.config/qvm/qvm.conf ] && source ~/.config/qvm/qvm.conf
 
@@ -36,6 +37,7 @@ NC="/usr/bin/nc"							# net-analyzer/openbsd-netcat
 QGA="/usr/bin/qemu-ga-client"	# app-emulation/qemu[pyhton]
 LSOF="/usr/bin/lsof"					# sys-process/lsof
 VFSD="/usr/libexec/virtiofsd"	# app-emulation/virtiofsd
+SPICY="/usr/bin/spicy"				# net-misc/spice-gtk
 
 # log settings
 NOCOLOR='\e[0m'			# no color
@@ -66,6 +68,12 @@ QGA_AVAILABLE=false
 if $(command -v ${QGA} > /dev/null) ; then
 	QGA_AVAILABLE=true
 fi
+# check if spicy is available
+SPICY_AVAILABLE=false
+if $(command -v ${SPICY} > /dev/null) ; then
+	SPICY_AVAILABLE=true
+fi
+
 
 _dry_run_check(){
 	if ${DRYRUN}; then
@@ -1236,6 +1244,10 @@ vm_start(){
 				DRYRUN=true
 				echo "dryrun - only printing boot parameters:" | (logwarn)
 				;;
+			spicy)
+				AUTOSTART_SPICY=true
+				echo "auto connect to vm via spicy" | (logwarn)
+				;;
 			*)
 				echo "Parameter: ${start_parameter} not known" | (logerr)
 				;;
@@ -1299,6 +1311,10 @@ vm_start(){
 		fi
 		if [ -n "${vnc_password}" ]; then
 			_vm_edit "set_password spice" ${spice_password}
+		fi
+
+		if ${VM_ENABLE_SPICE} && ${SPICY_AVAILABLE} && ${AUTOSTART_SPICY}; then
+			nohup ${SPICY} -h ${spice_ip} -p ${spice_port} &>/dev/null &disown
 		fi
 
 	fi
