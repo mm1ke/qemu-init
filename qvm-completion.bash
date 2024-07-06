@@ -88,6 +88,7 @@ readonly     start the vm in snapshot mode (changes wont be saved)
 pxeboot      start the vm and force booting from network
 fullscreen   start the vm in fullscreen mode
 nodisplay    start the vm without display output
+spicy        connect to the vm via spicy directly after starting
 dryrun       dryrun: don't boot the vm but print out the startparameters"
 
 	COMPREPLY=()
