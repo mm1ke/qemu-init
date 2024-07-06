@@ -23,12 +23,11 @@
 # Discription:
 # qvm: script for working with kvm guests
 
-MAX_QTAP=30
-DRYRUN=false
-TAP_DELETE=true
-AUTOSTART_SPICY=false
-
-[ -e ~/.config/qvm/qvm.conf ] && source ~/.config/qvm/qvm.conf
+# default values
+MAX_QTAP=10										# maximum number of tap devices per vm
+DRYRUN=false									# only print qemu command args, but not start
+TAP_DELETE=true								# automatically delete tap device on shutdown
+AUTOSTART_SPICY=false					# automatically connect via spicy (if available)
 
 # programs / dependencies
 BRIDGE="/sbin/bridge"					# sys-apps/iproute2
@@ -38,6 +37,9 @@ QGA="/usr/bin/qemu-ga-client"	# app-emulation/qemu[pyhton]
 LSOF="/usr/bin/lsof"					# sys-process/lsof
 VFSD="/usr/libexec/virtiofsd"	# app-emulation/virtiofsd
 SPICY="/usr/bin/spicy"				# net-misc/spice-gtk
+
+# load user settings
+[ -e ~/.config/qvm/qvm.conf ] && source ~/.config/qvm/qvm.conf
 
 # log settings
 NOCOLOR='\e[0m'			# no color
