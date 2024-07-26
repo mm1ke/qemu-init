@@ -796,10 +796,10 @@ vm_list() {
 		if [ -d ${CONF_PATH} ]; then
 			for i in $(find ${CONF_PATH} -type f); do
 				if [ -e /etc/init.d/kvm.${i##*/} ]; then
-					if [ -r "/run/kvm/${i##*/}.pid" ]; then
-						echo "${i##*/} (PID: $(cat /run/kvm/${i##*/}.pid))" | (loginfo)
+					if [ -r "/run/kvm/${i##*/}.qvm.pid" ]; then
+						echo "${i##*/} (PID: $(cat /run/kvm/${i##*/}.qvm.pid))" | (loginfo)
 					else
-						if [ -e "/run/kvm/${i##*/}.pid" ]; then
+						if [ -e "/run/kvm/${i##*/}.qvm.pid" ]; then
 							echo "${i##*/} (PID: -)" | (loginfo)
 						else
 							echo "${i##*/}" | (logerr)
