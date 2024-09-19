@@ -68,6 +68,10 @@ add          add a new PCI device
 remove       remove a PCI device
 list         list PCI devices added"
 
+	local _qvm_comp_cmd_connect="
+unix         connect via unix socket
+spicy        connect via spicy"
+
 	local _qvm_comp_cmd_all="
 boot         boot virtual machine
 kill         kill virtual machine instantly
@@ -139,6 +143,10 @@ dryrun       dryrun: don't boot the vm but print out the startparameters"
 					;;
 				hw|h)
 					__qvm_comp_with_text "${_qvm_comp_cmd_hw}"
+					;;
+				connect|c)
+					__qvm_comp_with_text "${_qvm_comp_cmd_connect}"
+					;;
 			esac
 			;;
 		4)
