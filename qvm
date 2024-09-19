@@ -820,7 +820,7 @@ vm_list() {
 		fi
 	else
 		if [ -e "${VMPID}" ]; then
-			local _vm_pid="$(cat /${VMPID})"
+			local _vm_pid="$(< ${VMPID})"
 			local _vm_starttime="$(ps -o "lstart=" -p ${_vm_pid})"
 			local _vm_uptime="$(ps -o "etime=" -p ${_vm_pid}|tr -d '[:space:]')"
 			local _vm_spice_settings="$(echo "info spice" \
@@ -1157,10 +1157,25 @@ vm_reset(){
 vm_connect(){
 	_check_running_vm
 
-	echo "Connecting to socket ${VMSOCK}"
-	echo "Use CTRL+D to detach from the socket"
-	echo
-	${NC} -U -q1 ${VMSOCK}
+	local _method="${1}"
+
+	case ${_method} in
+		unix)
+			echo "Connecting to socket ${VMSOCK}"
+			echo "Use CTRL+D to detach from the socket"
+			echo
+			${NC} -U -q1 ${VMSOCK}
+			;;
+		spicy)
+			if ${VM_ENABLE_SPICE} && ${SPICY_AVAILABLE}; then
+				local _vm_spice_settings="$(echo "info spice" \
+					| ${NC} -U -q1 ${VMSOCK} 2>&1 \
+					| grep --only-matching --perl-regex "(?<=address\:).*[0-9]" \
+					| head -n1|tr -d '[:space:]')"
+				nohup ${SPICY} -h ${_vm_spice_settings%%:*} -p ${_vm_spice_settings##*:} &>/dev/null &disown
+			fi
+			;;
+	esac
 }
 
 vm_freeze_thaw(){
@@ -1418,16 +1433,21 @@ usage() {
 	echo -e "start,stop and manipulating qemu vms"
 	echo
 	echo -e "guest start/stopping"
-	echo -e "qvm b|k|s|r|x|f|l|c|p [vmname] boot-options"
+	echo -e "qvm b|k|s|r|x|f|l|p [vmname] [boot-options]"
 	echo -e " b|boot\t\t\tboot virtual machine config file"
+	echo -e "  boot-options are: dryrun|fullscreen|nodisplay|pxeboot|readonly|spicy"
 	echo -e " k|kill\t\t\tkill virtual machine PID"
 	echo -e " s|stop\t\t\tstop virtual machine"
 	echo -e " x|reset\t\treset virtual machine"
 	echo -e " r|reboot\t\trestart virtual machine (via qemu guest agent)"
 	echo -e " f|freeze\t\tfreeze|unfreeze guest filesystem (via qemu guest agent)"
 	echo -e " l|list\t\t\tlist all virtual machines|show details of [vmname]"
-	echo -e " c|connect\t\tconnect to the unix socket of [vmname]"
 	echo -e " p|pause\t\tpause/unpause qemu virtualization"
+	echo
+	echo -e "vm/guest connecting"
+	echo -e "qvm connect [vmname] unix|spicy"
+	echo -e " unix\t\t\tconnect to [vmname] via unix socket"
+	echo -e " spicy\t\t\tconnect to [vmname] via spicy (if available)"
 	echo
 	echo -e "vm/guest modify"
 	echo -e "qvm update [vmname] memory|sendkey|[spice|vnc] value"
@@ -1490,8 +1510,8 @@ else
 		f|freeze) qvm_var_setup ${2} ; vm_freeze_thaw ;;
 		p|pause) qvm_var_setup ${2} ; vm_pause ;;
 		u|update) qvm_var_setup ${2} ; vm_update "${3}" "${4}" ;;
-		c|connect) qvm_var_setup ${2} ; vm_connect ;;
-		l|list) qvm_var_setup ${2} ; vm_list ;;
+		c|connect) qvm_var_setup ${2} ; vm_connect ${3};;
+		l|list) qvm_var_setup ${2} ; vm_list "${2}" ;;
 		e|snapshot) qvm_var_setup ${2} ; vm_snapshot "${3}" "${4}" ;;
 		h|hw) qvm_var_setup ${2} ; vm_hw "${3}" "${4}" "${5}" ;;
 		# host command
