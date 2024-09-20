@@ -1380,8 +1380,8 @@ vm_kill(){
 }
 
 vm_stop(){
-	local KVM_PID="$(< ${VMPID})"
 	_check_running_vm ${VMNAME}
+	local KVM_PID="$(< ${VMPID})"
 
 	# set default kill wait to 80 seconds
 	[ -z "${VM_KILL_WAIT}" ] && VM_KILL_WAIT=80
