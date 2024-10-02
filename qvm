@@ -810,7 +810,7 @@ vm_list() {
 		fi
 		if [ -n "${CFG_DIR}" ]; then
 			echo "User VMs:"
-			for i in $(find ${CFG_DIR} -type f); do
+			for i in $(find ${CFG_DIR} -type f|sort); do
 				if [ -e ${PID_DIR}/${i##*/}.qvm.pid ]; then
 					echo "${i##*/} (PID: $(cat ${PID_DIR}/${i##*/}.qvm.pid))" | (loginfo)
 				else
