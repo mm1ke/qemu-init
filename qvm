@@ -1340,9 +1340,9 @@ vm_start(){
 # cleanup is only required if guest was killed or it was running as root user
 # usually qemu handles this by itself and would cleanup these files anyway
 __vm_cleanup(){
-	for f in qga.sock qmp.sock sock pid pcie.map; do
-		if [ -e "${PID_DIR}/${VMNAME}.${f}" ]; then
-			rm ${PID_DIR}/${VMNAME}.${f}
+	for f in "${VMQGASOCK}" "${VMQMPSOCK}" "${VMSOCK}" "${VMPID}" "${VMPCIM}"; do
+		if [ -e "${f}" ]; then
+			rm "${f}"
 		fi
 	done
 }
@@ -1353,15 +1353,15 @@ __vm_cleanup_net(){
 	if [ -e "${VMNET}" ]; then
 		if ${TAP_DELETE}; then
 			delete_network "$(< ${VMNET})"
-			rm ${VMNET}
+			rm "${VMNET}"
 		else
-			rm ${VMNET}
+			rm "${VMNET}"
 		fi
 	fi
 
 	# remove pcie.map
 	if [ -e "${VMPCIM}" ]; then
-			rm ${VMPCIM}
+			rm "${VMPCIM}"
 	fi
 }
 
