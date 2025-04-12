@@ -1367,7 +1367,7 @@ vm_start(){
 # cleanup is only required if guest was killed or it was running as root user
 # usually qemu handles this by itself and would cleanup these files anyway
 __vm_cleanup(){
-	for f in "${VMQGASOCK}" "${VMQMPSOCK}" "${VMSOCK}" "${VMPID}" "${VMPCIM}"; do
+	for f in "${VMQGASOCK}" "${VMQMPSOCK}" "${VMSOCK}" "${VMPID}" "${VMPCIM}" "${VMTPM2}"; do
 		if [ -e "${f}" ]; then
 			rm "${f}"
 		fi
@@ -1400,6 +1400,11 @@ vm_kill(){
 	if (kill -0 ${KVM_PID} >/dev/null 2>&1); then
 		echo "Killing ${VMNAME}." | (logwarn)
 		kill -9 ${KVM_PID} > /dev/null 2>&1
+	fi
+
+	# make sure swtpm process gets killed in case the vm was killed
+	if [ -e "${VMTPM2}" ]; then
+		kill $(pgrep -f "${VMTPM2}")
 	fi
 
 	__vm_cleanup
@@ -1444,6 +1449,11 @@ vm_stop(){
 		echo
 	else
 		echo "Couldn't find the process of ${VMNAME}, guest might already down." | (logwarn)
+	fi
+
+	# make sure swtpm process gets killed in case the vm was killed
+	if [ -e "${VMTPM2}" ]; then
+		kill $(pgrep -f "${VMTPM2}")
 	fi
 
 	__vm_cleanup_net
