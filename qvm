@@ -37,6 +37,7 @@ QGA="/usr/bin/qemu-ga-client"	# app-emulation/qemu[pyhton]
 LSOF="/usr/bin/lsof"					# sys-process/lsof
 VFSD="/usr/libexec/virtiofsd"	# app-emulation/virtiofsd
 SPICY="/usr/bin/spicy"				# net-misc/spice-gtk
+SWTPM="/usr/bin/swtpm" 				# app-crypt/swtpm
 
 # load user settings
 [ -e ~/.config/qvm/qvm.conf ] && source ~/.config/qvm/qvm.conf
@@ -617,7 +618,7 @@ _myconfig(){
 	)
 
 	# set runas user
-	${SET_USER} && myconfig+=(-runas ${VM_USER})
+	${SET_USER} && myconfig+=(-run-with user="${VM_USER}")
 
 	if [ -n "${VM_KERNEL}" ]; then
 		myconfig+=(
@@ -668,6 +669,12 @@ _myconfig(){
 	(${VM_ENABLE_VPMEM:-false}) && myconfig+=(
 		-object memory-backend-file,id=mem1,size=${VM_MEMORY:-1G},mem-path=/dev/shm/,share=on
 		-numa node,memdev=mem1
+	)
+	# tpm2 device
+	(${VM_ENABLE_TPM2:-false}) && myconfig+=(
+		-chardev socket,id=${VMNAME}-chrtpm,path=${VMTPM2}
+		-tpmdev emulator,id=${VMNAME}-tpm0,chardev=${VMNAME}-chrtpm
+		-device tpm-tis,tpmdev=${VMNAME}-tpm0
 	)
 
 	# enable pcie port
@@ -1040,6 +1047,20 @@ host_network(){
 	esac
 }
 
+create_tpm2() {
+	TPM2_CMD="${SWTPM} socket -d --tpm2 --tpmstate dir=${PID_DIR} --ctrl type=unixio,path=${VMTPM2} -r ${VM_USER}"
+	# to create tpm2 we need to run the commands as root
+	echo "Creating TPM2 interface for ${VMNAME}" | (loginfo)
+	if [ $(id -u) = 0 ]; then
+		/bin/sh -c "${TPM2_CMD}"
+	else
+		if ! $(su -l root -c "${TPM2_CMD}"); then
+			echo "Error creating network interfaces" | (logerr)
+			exit 1
+		fi
+	fi
+}
+
 create_network() {
 	local allint="${1}"
 	local singleint
@@ -1306,8 +1327,14 @@ vm_start(){
 			_pcie_ports=$(expr ${_pcie_ports} - 1)
 		done
 
+		# create network interfaces
 		if [ -n "${NET_INT}" ]; then
 			create_network "${NET_INT[@]}"
+		fi
+
+		# create tpm2 interface if required
+		if [ -n "${VM_ENABLE_TPM2}" ]; then
+			create_tpm2
 		fi
 
 		# start the actual vm
@@ -1489,6 +1516,8 @@ qvm_var_setup() {
 	VMPCIM="${PID_DIR}/${vm}.pcie.map"
 	# the final pid name contain the share name too
 	VMVFSDPID="${PID_DIR}/${vm}-vfsd-"
+	# TPM2 socket name
+	VMTPM2="${PID_DIR}/${vm}.tpm.sock"
 }
 
 # start of the script
