@@ -1337,6 +1337,12 @@ vm_start(){
 			create_tpm2
 		fi
 
+		if [ -n "${VM_START_MESSAGE}" ]; then
+			echo
+			echo "${VM_START_MESSAGE}" | (loginfo)
+			echo
+		fi
+
 		# start the actual vm
 		TMPDIR=${TMP_DIR} ${VM_QEMU_BIN} "${myconfig[@]}" >/dev/null
 
