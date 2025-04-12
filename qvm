@@ -1457,8 +1457,7 @@ vm_stop(){
 	fi
 
 	__vm_cleanup_net
-	#VMVFSDPID
-	rm -f ${PID_DIR}/${VMNAME}-vfsd*
+	rm -f ${VMVFSDPID}*
 
 	# for some reason when running as root qemu doesn't clean up pid/sock files
 	# after we stopped a vm. So lets clean them up manually.
