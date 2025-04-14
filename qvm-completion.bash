@@ -93,7 +93,8 @@ pxeboot      start the vm and force booting from network
 fullscreen   start the vm in fullscreen mode
 nodisplay    start the vm without display output
 spicy        connect to the vm via spicy directly after starting
-dryrun       dryrun: don't boot the vm but print out the startparameters"
+dryrun       dryrun: don't boot the vm but print out the startparameters
+nonet        disable networking entirely"
 
 	COMPREPLY=()
 	local cur=${COMP_WORDS[COMP_CWORD]}

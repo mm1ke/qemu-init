@@ -28,6 +28,7 @@ MAX_QTAP=10										# maximum number of tap devices per vm
 DRYRUN=false									# only print qemu command args, but not start
 TAP_DELETE=true								# automatically delete tap device on shutdown
 AUTOSTART_SPICY=false					# automatically connect via spicy (if available)
+DISABLE_NET=false 						# disable networking
 
 # programs / dependencies
 BRIDGE="/sbin/bridge"					# sys-apps/iproute2
@@ -737,7 +738,11 @@ _myconfig(){
 	# enable/disable harddisks
 	[ -z "${VM_HD}" ] || myconfig+=(${VM_HD})
 	# network settings
-	[ -z "${VM_NET}" ] || myconfig+=(${VM_NET})
+	if ${DISABLE_NET}; then
+		myconfig+=(-net none)
+	else
+		[ -z "${VM_NET}" ] || myconfig+=(${VM_NET})
+	fi
 	# 9p shares
 	[ -z "${VM_9P}" ] || myconfig+=(${VM_9P})
 	# virtiofsd shares
@@ -1285,6 +1290,10 @@ vm_start(){
 			spicy)
 				AUTOSTART_SPICY=true
 				echo "auto connect to vm via spicy" | (logwarn)
+				;;
+			nonet)
+				DISABLE_NET=true
+				echo "disable networking entirely" | (logwarn)
 				;;
 			*)
 				echo "Parameter: ${start_parameter} not known" | (logerr)
