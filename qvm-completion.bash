@@ -55,7 +55,8 @@ function _qvm_comp_list(){
 memory       change vm memory
 sendkey      send key combinatin to vm
 vnc          change vnc password
-spice        change spice password"
+spice        change spice password
+toggle       toggle a qemu network interface"
 
 	local _qvm_comp_cmd_snapshot="
 create       create a new snapshot
@@ -92,9 +93,9 @@ readonly     start the vm in snapshot mode (changes wont be saved)
 pxeboot      start the vm and force booting from network
 fullscreen   start the vm in fullscreen mode
 nodisplay    start the vm without display output
+nonet        disable networking entirely
 spicy        connect to the vm via spicy directly after starting
-dryrun       dryrun: don't boot the vm but print out the startparameters
-nonet        disable networking entirely"
+dryrun       don't boot the vm but print out the startparameters"
 
 	COMPREPLY=()
 	local cur=${COMP_WORDS[COMP_CWORD]}
@@ -151,6 +152,10 @@ nonet        disable networking entirely"
 			esac
 			;;
 		4)
+			_vm_pid="$(< ${pid_dir}/${COMP_WORDS[COMP_CWORD-2]}.qvm.pid)"
+			_vm_sock="${pid_dir}/${COMP_WORDS[COMP_CWORD-2]}.sock"
+			_vm_pciem="${pid_dir}/${COMP_WORDS[COMP_CWORD-2]}.pcie.map"
+
 			case ${prev} in
 				mem|memory)
 					COMPREPLY=($(compgen -W "1024 2048 4096 8192 16284 32768" -- ${cur}))
@@ -158,9 +163,34 @@ nonet        disable networking entirely"
 				key|sendkey)
 					COMPREPLY=($(compgen -W "ctrl-alt-f1 ctrl-alt-f7 ctrl-alt-delete" -- ${cur}))
 					;;
+				toggle)
+					local _tap_devices="$(cat /proc/${_vm_pid}/fdinfo/*|grep tap|cut -d':' -f2| tr -d '[:blank:]'|sort)"
+					local _network_info="$(echo "info network" | socat - unix-connect:${_vm_sock} | tail --lines=+2 | grep -v '^(qemu)' 2>&1)"
+					local _tap_macs=( $(echo ${_network_info} | grep -o -E '([[:xdigit:]]{1,2}:){5}[[:xdigit:]]{1,2}') )
+
+					local _id="0"
+					read -r -d '' _id_net <<- EOM
+					EOM
+					
+					for i in ${_tap_devices}; do
+						local master_bridge="$(cat /sys/class/net/${i}/master/uevent|grep INTERFACE|cut -d'=' -f 2)"
+						local _single_tap_mac="$(cat /sys/class/net/${i}/address)"
+						local _qemu_bridge="$(echo "${_network_info}" | grep ${_tap_macs[${_id}]} -A1 | grep br= | cut -d'=' -f5|tr '\r' -d)"
+						local _qemu_interface_name="$(echo "${_network_info}"|grep ${_tap_macs[${_id}]}|cut -d':' -f1)"
+						read -r -d '' _id_if <<- EOM
+							"${_qemu_interface_name} (Host-IF: ${i}(${_single_tap_mac}) --> ${master_bridge}|"${_qemu_bridge:0:-1}" <-- Qemu-IF: ${_qemu_interface_name}(${_tap_macs[${_id}]}))"
+						EOM
+						read -r -d '' _id_net <<- EOM
+							${_id_net}
+							${_id_if}
+						EOM
+						_id=$(expr ${_id} + 1)
+					done
+					__qvm_comp_with_text "${_id_net}"
+					;;
 				delete)
 					local snapshots="$(echo "info snapshots" \
-						| nc -U -q1 /run/user/$(id -u)/${COMP_WORDS[COMP_CWORD-2]}.sock \
+						| socat - unix-connect:${_vm_sock} \
 						| tail -n+5 \
 						| head -n-1 \
 						| tr -s \ '' \
@@ -169,7 +199,7 @@ nonet        disable networking entirely"
 						COMPREPLY=($(compgen -W "$(echo "${snapshots}")" -- ${cur}))
 					;;
 				load)
-					local snapshots="$(echo "info snapshots" | nc -U -q1 /run/user/$(id -u)/${COMP_WORDS[COMP_CWORD-2]}.sock)"
+					local snapshots="$(echo "info snapshots" | socat - unix-connect:${_vm_sock})"
 					COMPREPLY=($(compgen -W "$(echo "${snapshots}"|tail -n+5|head -n-1|tr -s \ '' | cut -d' ' -f2|tr '\n' ' ')" -- ${cur}))
 					;;
 				add)
@@ -177,7 +207,7 @@ nonet        disable networking entirely"
 					;;
 				remove)
 					local devices="$(
-						for x in $(cat /run/user/$(id -u)/${COMP_WORDS[COMP_CWORD-2]}.pcie.map \
+						for x in $(cat ${_vm_pciem} \
 						| tr '|' '\n' \
 						| head -n -1 \
 						| nl -w1 -s'-' -b a);

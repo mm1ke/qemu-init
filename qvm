@@ -33,7 +33,7 @@ DISABLE_NET=false 						# disable networking
 # programs / dependencies
 BRIDGE="/sbin/bridge"					# sys-apps/iproute2
 IP="/bin/ip"									# sys-apps/iproute2
-NC="/usr/bin/nc"							# net-analyzer/openbsd-netcat
+SOCAT="/usr/bin/socat"				# net-misc/socat
 QGA="/usr/bin/qemu-ga-client"	# app-emulation/qemu[pyhton]
 LSOF="/usr/bin/lsof"					# sys-process/lsof
 VFSD="/usr/libexec/virtiofsd"	# app-emulation/virtiofsd
@@ -92,7 +92,7 @@ _vm_edit(){
 	local _value="${2}"
 	local _output
 
-	_output="$(echo "${_cmd} ${_value}" | ${NC} -U -q1 ${VMSOCK})"
+	_output="$(echo "${_cmd} ${_value}" | ${SOCAT} - unix-connect:${VMSOCK})"
 	# catch some errors and print them
 	if $(echo ${_output}|grep -q "Migration is disabled") || $(echo ${_output}|grep -q "Error:"); then
 		echo "${_output}" | head -n+3 | tail -n1 | (logerr)
@@ -103,7 +103,7 @@ _vm_edit_snapshot_output(){
 	local _cmd="${1}"
 	local _output
 
-	_output="$(echo "${_cmd}" | ${NC} -U -q1 ${VMSOCK})"
+	_output="$(echo "${_cmd}" | ${SOCAT} - unix-connect:${VMSOCK})"
 	echo "${_output}"|tail -n+4|head -n-1
 }
 
@@ -801,6 +801,7 @@ vm_list() {
 		_check_running_vm
 	fi
 
+	# if no vmname is given print information about all vms
 	if [ -z "${VMNAME}" ]; then
 		echo "System VMs:"
 		[ -f /etc/conf.d/kvm ] && source /etc/conf.d/kvm
@@ -835,22 +836,49 @@ vm_list() {
 			local _vm_pid="$(< ${VMPID})"
 			local _vm_starttime="$(ps -o "lstart=" -p ${_vm_pid})"
 			local _vm_uptime="$(ps -o "etime=" -p ${_vm_pid}|tr -d '[:space:]')"
+
+			echo "Details of ${VMNAME}:" | (loginfo)
+			echo -e "  VM started at:\t${_vm_starttime}"
+			echo -e "  Uptime:\t\t${_vm_uptime}"
+			echo -e "  PID:\t\t\t${_vm_pid}"
+
 			local _vm_spice_settings="$(echo "info spice" \
-				| ${NC} -U -q1 ${VMSOCK} 2>&1 \
+				| ${SOCAT} - unix-connect:${VMSOCK} 2>&1 \
 				| grep --only-matching --perl-regex "(?<=address\:).*[0-9]" \
 				| head -n1|tr -d '[:space:]')"
 			# don't include the 4 in the regex so the result won't include: (ipv4)
 			local	_vm_vnc_settings="$(echo "info vnc" \
-				| ${NC} -U -q1 ${VMSOCK} 2>&1 \
+				| ${SOCAT} - unix-connect:${VMSOCK} 2>&1 \
 				| grep --only-matching --perl-regex "(?<=Server\:).*[1,2,3,5,6,7,8,9,0]" \
 				| head -n1|tr -d '[:space:]')"
-			echo "Details of ${VMNAME}:"
-			echo -e " VM started at:\t\t${_vm_starttime}"
-			echo -e " Uptime:\t\t${_vm_uptime}"
-			echo -e " PID:\t\t\t${_vm_pid}"
-			echo -e " Spice:\t\t\t${_vm_spice_settings}"
-			echo -e " VNC:\t\t\t${_vm_vnc_settings}"
-			# TODO: info about networks -> echo "info network" | nc -U -q1 *.sock
+			
+			# check if spice or vnc is enabled
+			#
+			if [ -n "${_vm_spice_settings}" ]; then
+				echo -e "  Spice:\t\t${_vm_spice_settings}"
+			fi
+			if [ -n "${_vm_vnc_settings}" ]; then
+				echo -e "  VNC:\t\t\t${_vm_vnc_settings}"
+			fi
+
+			echo "Network details:" | (loginfo)
+			local _tap_devices="$(cat /proc/${_vm_pid}/fdinfo/*|grep tap|cut -d':' -f2| tr -d '[:blank:]'|sort)"
+			local _network_info="$(echo "info network" | ${SOCAT} - unix-connect:${VMSOCK} | tail --lines=+2 | grep -v '^(qemu)' 2>&1)"
+			local _tap_macs=( $(echo ${_network_info} | grep -o -E '([[:xdigit:]]{1,2}:){5}[[:xdigit:]]{1,2}') )
+
+			local _id="0"
+			for i in ${_tap_devices}; do
+				local master_bridge="$(cat /sys/class/net/${i}/master/uevent|grep INTERFACE|cut -d'=' -f 2)"
+				local _single_tap_mac="$(cat /sys/class/net/${i}/address)"
+				local _qemu_bridge="$(echo "${_network_info}" | grep ${_tap_macs[${_id}]} -A1 | grep br= | cut -d'=' -f5|tr '\r' -d)"
+				local _qemu_interface_name="$(echo "${_network_info}"|grep ${_tap_macs[${_id}]}|cut -d':' -f1)"
+				if [ -e "${PID_DIR}/${VMNAME}-${_qemu_interface_name}" ]; then
+					echo " \ DOWN ${i}(${_single_tap_mac}) --> ${master_bridge} ("${_qemu_bridge:0:-1}") <-- ${_qemu_interface_name}(${_tap_macs[${_id}]})" | (logerr)
+				else
+					echo " \ UP ${i}(${_single_tap_mac}) --> ${master_bridge} ("${_qemu_bridge:0:-1}") <-- ${_qemu_interface_name}(${_tap_macs[${_id}]})" | (loginfo)
+				fi
+					_id=$(expr ${_id} + 1)
+			done
 		fi
 	fi
 }
@@ -883,7 +911,20 @@ vm_update() {
 			echo "Changing SPICE password to ${_value}" | (loginfo)
 			_vm_edit "set_password spice" ${_value}
 			;;
-	esac
+		toggle)
+			local _net_state="${PID_DIR}/${VMNAME}-net_state-${_value}"
+
+			if [ -e "${_net_state}" ]; then
+				echo "Enabling Network interface ${_value}" | (loginfo)
+				_vm_edit "set_link ${_value} on"
+				rm "${_net_state}"
+			else
+				echo "Disabling Network interface ${_value}" | (loginfo)
+				_vm_edit "set_link ${_value} off"
+				touch "${_net_state}"
+			fi
+			;;
+		esac
 }
 
 vm_snapshot() {
@@ -1177,7 +1218,7 @@ vm_reset(){
 	_check_running_vm
 
 	echo "Reseting ${VMNAME}"
-	echo "system_reset" | ${NC} -U -q1 ${VMSOCK} > /dev/null 2>&1
+	echo "system_reset" | ${SOCAT} - unix-connect:${VMSOCK} > /dev/null 2>&1
 }
 
 vm_connect(){
@@ -1188,19 +1229,21 @@ vm_connect(){
 	case ${_method} in
 		unix)
 			echo "Connecting to socket ${VMSOCK}"
-			echo "Use CTRL+D to detach from the socket"
+			echo "Use CTRL+C to detach from the socket"
 			echo
-			${NC} -U -q1 ${VMSOCK}
+			${SOCAT} -,echo=0,icanon=0 unix-connect:${VMSOCK}
 			;;
 		spicy)
 			if ${VM_ENABLE_SPICE} && ${SPICY_AVAILABLE}; then
 				local _vm_spice_settings="$(echo "info spice" \
-					| ${NC} -U -q1 ${VMSOCK} 2>&1 \
+					| ${SOCAT} - unix-connect:${VMSOCK} 2>&1 \
 					| grep --only-matching --perl-regex "(?<=address\:).*[0-9]" \
 					| head -n1|tr -d '[:space:]')"
 				nohup ${SPICY} -h ${_vm_spice_settings%%:*} -p ${_vm_spice_settings##*:} &>/dev/null &disown
 			fi
 			;;
+		*)
+			echo "Please choose how to connect to the vm. (unix socket or spicy)"
 	esac
 }
 
@@ -1224,15 +1267,15 @@ vm_freeze_thaw(){
 vm_pause(){
 	_check_running_vm
 
-	local vm_status="$(echo "info status" | ${NC} -U -q1 ${VMSOCK})"
+	local vm_status="$(echo "info status" | ${SOCAT} - unix-connect:${VMSOCK})"
 	vm_status="$(echo "${vm_status}"|tail -n+3|head -n-1|cut -d' ' -f3)"
 
 	if $(echo "${vm_status}"|grep -q "running"); then
 		echo "stopping emulation"
-		echo "s" | ${NC} -U -q1 ${VMSOCK} > /dev/null 2>&1
+		echo "s" | ${SOCAT} - unix-connect:${VMSOCK} > /dev/null 2>&1
 	elif $(echo "${vm_status}"|grep -q "paused"); then
 		echo "resume emulation"
-		echo "c" | ${NC} -U -q1 ${VMSOCK} > /dev/null 2>&1
+		echo "c" | ${SOCAT} - unix-connect:${VMSOCK} > /dev/null 2>&1
 	else
 		echo "Unknow system status: ${vm_status}" | (logwarn)
 	fi
@@ -1424,6 +1467,9 @@ vm_kill(){
 
 	__vm_cleanup
 	__vm_cleanup_net
+	rm -f ${VMVFSDPID}*
+	rm -f ${VMNSTATE}*
+
 }
 
 vm_stop(){
@@ -1437,7 +1483,7 @@ vm_stop(){
 	if (kill -0 ${KVM_PID} >/dev/null 2>&1); then
 		echo "Stopping ${VMNAME} ..." | (loginfo)
 		# sending system_powerdown via nc (netcat)
-		echo "system_powerdown" | ${NC} -U -q1 ${VMSOCK} > /dev/null 2>&1
+		echo "system_powerdown" | ${SOCAT} - unix-connect:${VMSOCK} > /dev/null 2>&1
 		# waiting for system to shutdown
 		echo "Waiting ${VM_KILL_WAIT} seconds for ${VMNAME} to shutdown." | (loginfon)
 		local cnt=0
@@ -1456,7 +1502,7 @@ vm_stop(){
 			fi
 			# send system_powerdown every 10 seconds
 			if [ $(( ${cnt} % 10)) = 0 ]; then
-				echo "system_powerdown" | ${NC} -U -q1 ${VMSOCK} > /dev/null 2>&1
+				echo "system_powerdown" | ${SOCAT} - unix-connect:${VMSOCK} > /dev/null 2>&1
 			fi
 			sleep 2
 			printf "."
@@ -1473,6 +1519,7 @@ vm_stop(){
 
 	__vm_cleanup_net
 	rm -f ${VMVFSDPID}*
+	rm -f ${VMNSTATE}*
 
 	# for some reason when running as root qemu doesn't clean up pid/sock files
 	# after we stopped a vm. So lets clean them up manually.
@@ -1486,7 +1533,7 @@ usage() {
 	echo -e "guest start/stopping"
 	echo -e "qvm b|k|s|r|x|f|l|p [vmname] [boot-options]"
 	echo -e " b|boot\t\t\tboot virtual machine config file"
-	echo -e "  boot-options are: dryrun|fullscreen|nodisplay|pxeboot|readonly|spicy"
+	echo -e "  boot-options are: dryrun|fullscreen|nodisplay|nonet|pxeboot|readonly|spicy"
 	echo -e " k|kill\t\t\tkill virtual machine PID"
 	echo -e " s|stop\t\t\tstop virtual machine"
 	echo -e " x|reset\t\treset virtual machine"
@@ -1501,10 +1548,11 @@ usage() {
 	echo -e " spicy\t\t\tconnect to [vmname] via spicy (if available)"
 	echo
 	echo -e "vm/guest modify"
-	echo -e "qvm update [vmname] memory|sendkey|[spice|vnc] value"
+	echo -e "qvm update [vmname] memory|sendkey|spice|vnc|toggle value"
 	echo -e " memory 4096\t\tchange the memory of [vmname] via ballooing"
 	echo -e " sendkey ctrl-alt-f1\tsend key combination to [vmname] (like ctrl-alt-f1)"
 	echo -e " vnc|spice P4ssw0rd\tchange vnc or spice password of [vmname]"
+	echo -e " toggle qemu interface\ttoggle a qemu network interface in [vmname]"
 	echo
 	echo -e "vm/guest add/remove virtual hardware"
 	echo -e "qvm hw [vmname] add|remove|list [network|harddisk] [value]"
@@ -1542,6 +1590,8 @@ qvm_var_setup() {
 	VMVFSDPID="${PID_DIR}/${vm}-vfsd-"
 	# TPM2 socket name
 	VMTPM2="${PID_DIR}/${vm}.tpm.sock"
+	# Network state files
+	VMNSTATE="${PID_DIR}/${vm}-net_state-"
 }
 
 # start of the script
