@@ -29,6 +29,7 @@ DRYRUN=false									# only print qemu command args, but not start
 TAP_DELETE=true								# automatically delete tap device on shutdown
 AUTOSTART_SPICY=false					# automatically connect via spicy (if available)
 DISABLE_NET=false 						# disable networking
+DISABLE_IPV6=false						# make sure ipv6 is disabled on created tap devices
 
 # programs / dependencies
 BRIDGE="/sbin/bridge"					# sys-apps/iproute2
@@ -1119,6 +1120,11 @@ create_network() {
 	read -r -d '' CREATE_TAP <<- EOM
 	EOM
 
+	# save disable_ipv6 setting of host
+	local _host_ipv6_setting="$(< /proc/sys/net/ipv6/conf/default/disable_ipv6)"
+	# disable ipv6 for sure
+	${DISABLE_IPV6} && sysctl -wq net.ipv6.conf.default.disable_ipv6=1
+
 	for singleint in ${allint}; do
 		local _type="${singleint%%,*}"
 		local _name="${singleint##*,}"
@@ -1154,6 +1160,9 @@ create_network() {
 			exit 1
 		fi
 	fi
+
+	# set disable_ipv6=1 to previous setting
+	${DISABLE_IPV6} && sysctl -wq net.ipv6.conf.default.disable_ipv6="${_host_ipv6_setting}"
 }
 
 delete_network() {
@@ -1395,8 +1404,16 @@ vm_start(){
 			echo
 		fi
 
+		# save disable_ipv6 setting of host
+		local _host_ipv6_setting="$(< /proc/sys/net/ipv6/conf/default/disable_ipv6)"
+		# disable ipv6 for sure
+		${DISABLE_IPV6} && sysctl -wq net.ipv6.conf.default.disable_ipv6=1
+
 		# start the actual vm
 		TMPDIR=${TMP_DIR} ${VM_QEMU_BIN} "${myconfig[@]}" >/dev/null
+
+		# set disable_ipv6=1 to previous setting
+		${DISABLE_IPV6} && sysctl -wq net.ipv6.conf.default.disable_ipv6="${_host_ipv6_setting}"
 
 		# remove tap devices if the guest system couldn't be started
 		if [ "$?" != "0" ]; then
