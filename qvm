@@ -41,7 +41,12 @@ VFSD="/usr/libexec/virtiofsd"	# app-emulation/virtiofsd
 SPICY="/usr/bin/spicy"				# net-misc/spice-gtk
 SWTPM="/usr/bin/swtpm" 				# app-crypt/swtpm
 
-# load user settings
+# default paths
+SYS_CONF_PATH="/etc/qvm/cfg/"
+USER_CONF_PATH=""
+
+# load system and user settings
+[ -e /etc/qvm/qvm.conf ] && source /etc/qvm/qvm.conf
 [ -e ~/.config/qvm/qvm.conf ] && source ~/.config/qvm/qvm.conf
 
 # log settings
@@ -55,6 +60,7 @@ logwarn() { while IFS='' read -r line; do >&2 echo -e "${YELLOW} * ${NOCOLOR} Wa
 logerr() { while IFS='' read -r line; do >&2 echo -e "${LIGHTRED} * ${NOCOLOR}${line}"; done }
 
 # check PID_DIR and TMP_DIR
+# root started vms are system vms and have a different PID_DIR location
 PID_DIR="/run/kvm"
 if [ $(id -u) = 0 ]; then
 	[ -d ${PID_DIR} ] || mkdir ${PID_DIR}
@@ -804,27 +810,35 @@ vm_list() {
 
 	# if no vmname is given print information about all vms
 	if [ -z "${VMNAME}" ]; then
-		echo "System VMs:"
-		[ -f /etc/conf.d/kvm ] && source /etc/conf.d/kvm
-		[ -z "${CONF_PATH}" ] && CONF_PATH="/etc/qvm/"
-		if [ -d ${CONF_PATH} ]; then
-			for i in $(find ${CONF_PATH} -type f); do
-				if [ -e /etc/init.d/kvm.${i##*/} ]; then
-					if [ -r "/run/kvm/${i##*/}.qvm.pid" ]; then
-						echo "${i##*/} (PID: $(cat /run/kvm/${i##*/}.qvm.pid))" | (loginfo)
+		echo "Regular System VMs:"
+		if [ -d ${SYS_CONF_PATH} ]; then
+			for i in $(find ${SYS_CONF_PATH} -type f); do
+				if [ -r "/${PID_DIR}/${i##*/}.qvm.pid" ]; then
+					echo "${i##*/} (PID: $(cat /${PID_DIR}/${i##*/}.qvm.pid))" | (loginfo)
+				else
+					if [ -e "/${PID_DIR}/${i##*/}.qvm.pid" ]; then
+						echo "${i##*/} (PID: -)" | (loginfo)
 					else
-						if [ -e "/run/kvm/${i##*/}.qvm.pid" ]; then
-							echo "${i##*/} (PID: -)" | (loginfo)
-						else
-							echo "${i##*/}" | (logerr)
-						fi
+						echo "${i##*/}" | (logerr)
 					fi
 				fi
 			done
 		fi
-		if [ -n "${CFG_DIR}" ]; then
+		echo "OpenRC System VMs:"
+		for i in $(find /etc/init.d/ -type l -name "kvm.*"); do
+			if [ -r "${PID_DIR}/${i##*.}.qvm.pid" ]; then
+				echo "${i##*.} (PID: $(cat /${PID_DIR}/${i##*.}.qvm.pid))" | (loginfo)
+			else
+				if [ -e "/${PID_DIR}/${i##*.}.qvm.pid" ]; then
+					echo "${i##*.} (PID: -)" | (loginfo)
+				else
+					echo "${i##*.}" | (logerr)
+				fi
+			fi
+		done
+		if [ -n "${USER_CONF_PATH}" ]; then
 			echo "User VMs:"
-			for i in $(find ${CFG_DIR} -type f|sort); do
+			for i in $(find ${USER_CONF_PATH} -type f|sort); do
 				if [ -e ${PID_DIR}/${i##*/}.qvm.pid ]; then
 					echo "${i##*/} (PID: $(cat ${PID_DIR}/${i##*/}.qvm.pid))" | (loginfo)
 				else
@@ -1123,7 +1137,9 @@ create_network() {
 	# save disable_ipv6 setting of host
 	local _host_ipv6_setting="$(< /proc/sys/net/ipv6/conf/default/disable_ipv6)"
 	# disable ipv6 for sure
-	${DISABLE_IPV6} && sysctl -wq net.ipv6.conf.default.disable_ipv6=1
+	if ${DISABLE_IPV6}; then
+		sysctl -wq net.ipv6.conf.default.disable_ipv6=1
+	fi
 
 	for singleint in ${allint}; do
 		local _type="${singleint%%,*}"
@@ -1162,7 +1178,9 @@ create_network() {
 	fi
 
 	# set disable_ipv6=1 to previous setting
-	${DISABLE_IPV6} && sysctl -wq net.ipv6.conf.default.disable_ipv6="${_host_ipv6_setting}"
+	if ${DISABLE_IPV6}; then
+		sysctl -wq net.ipv6.conf.default.disable_ipv6="${_host_ipv6_setting}"
+	fi
 }
 
 delete_network() {
@@ -1294,16 +1312,33 @@ vm_start(){
 	local start_parameter="${1}"
 
 	# find out which file to source
-	local vm_config_file="${VMNAME}"
-	if ! [ -f "${vm_config_file}" ]; then
-		[ -z "${CONF_PATH}" ] && CONF_PATH="/etc/qvm/"
-		[ -z "${CFG_DIR}" ] && CFG_DIR="${CONF_PATH}"
-		if [ -f "${CFG_DIR}${vm_config_file}" ]; then
-			vm_config_file="${CFG_DIR}${vm_config_file}"
+	# since ${VMNAME} can be a system vm or user vm we need check 2 possiblities
+	# but also warn if we find vms (same name) in system and user context
+	#
+	local vm_config_file=""
+	if [ -f /etc/conf.d/kvm.${VMNAME} ]; then
+		vm_config_file="/etc/conf.d/kvm.${VMNAME}"
+	fi
+	if [ -f "${SYS_CONF_PATH}/${VMNAME}" ]; then
+		if [ -z "${vm_config_file}" ]; then
+			vm_config_file="${SYS_CONF_PATH}/${VMNAME}"
 		else
-			echo "Config file \"${CFG_DIR}${vm_config_file}\" not found." | (logerr)
+			echo "${VMNAME} has multiple config files:  \"${vm_config_file}\" and \"${SYS_CONF_PATH}/${VMNAME}\"" | (logerr)
 			exit 1
 		fi
+	fi
+	if [ -f "${USER_CONF_PATH}/${VMNAME}" ]; then
+		if [ -z "${vm_config_file}" ]; then
+			vm_config_file="${USER_CONF_PATH}/${VMNAME}"
+		else
+			echo "${VMNAME} has multiple config files:  \"${vm_config_file}\" and \"${SYS_CONF_PATH}/${VMNAME}\"" | (logerr)
+			exit 1
+		fi
+	fi
+	# stop if the config file doesn't exist
+	if ! [ -f "${vm_config_file}" ]; then
+				echo "Config file \"${CFG_DIR}${vm_config_file}\" not found." | (logerr)
+		exit 1
 	fi
 
 	# Start the Virtual Machine
@@ -1407,13 +1442,17 @@ vm_start(){
 		# save disable_ipv6 setting of host
 		local _host_ipv6_setting="$(< /proc/sys/net/ipv6/conf/default/disable_ipv6)"
 		# disable ipv6 for sure
-		${DISABLE_IPV6} && sysctl -wq net.ipv6.conf.default.disable_ipv6=1
+		if ${DISABLE_IPV6}; then
+			sysctl -wq net.ipv6.conf.default.disable_ipv6=1
+		fi
 
 		# start the actual vm
 		TMPDIR=${TMP_DIR} ${VM_QEMU_BIN} "${myconfig[@]}" >/dev/null
 
 		# set disable_ipv6=1 to previous setting
-		${DISABLE_IPV6} && sysctl -wq net.ipv6.conf.default.disable_ipv6="${_host_ipv6_setting}"
+		if ${DISABLE_IPV6}; then
+			sysctl -wq net.ipv6.conf.default.disable_ipv6="${_host_ipv6_setting}"
+		fi
 
 		# remove tap devices if the guest system couldn't be started
 		if [ "$?" != "0" ]; then
@@ -1590,6 +1629,9 @@ usage() {
 	echo -e " del\t\t\tremove a tap device"
 }
 
+# set the default parameters for a given vm
+# dependending on who invokes 'qvm' (root or a user)
+# PID_DIR differs and thus sets variables for different vms (system vs user vms)
 qvm_var_setup() {
 	local vm="${1}"
 	# vm name

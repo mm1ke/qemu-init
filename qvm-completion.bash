@@ -108,9 +108,9 @@ dryrun       don't boot the vm but print out the startparameters"
 		2)
 			case ${prev} in
 				boot|b)
-					if [ -n "${CFG_DIR}" ]; then
-						local _vms="$(find ${CFG_DIR} -type f -printf '%f\n'|sort)"
-						__qvm_comp_with_text "$(find ${CFG_DIR} -type f -printf '%f\n'|sort)"
+					if [ -n "${USER_CONF_PATH}" ]; then
+						local _vms="$(find ${USER_CONF_PATH} -type f -printf '%f\n'|sort)"
+						__qvm_comp_with_text "$(find ${USER_CONF_PATH} -type f -printf '%f\n'|sort)"
 					else
 
 						__qvm_comp_with_text "$(find /etc/init.d/kvm.* -type l -printf '%f\n'|cut -d'.' -f2-|sort)"
@@ -227,9 +227,9 @@ dryrun       don't boot the vm but print out the startparameters"
 					COMPREPLY=($(compgen -W "$(grep -v -e '^$' -e '^#' /etc/qemu/bridge.conf | cut -d' ' -f2|sort -u)" -- ${cur}))
 					;;
 				harddisk)
-					if [ -n "${IMG_DIR}" ]; then
-						#local _vms="$(find ${CFG_DIR} -type f -printf '%f\n'|sort)"
-						__qvm_comp_with_text "$(find ${IMG_DIR} -type f -printf '%f\n'|sort)"
+					if [ -n "${USER_IMG_PATH}" ]; then
+						#local _vms="$(find ${USER_CONF_PATH} -type f -printf '%f\n'|sort)"
+						__qvm_comp_with_text "$(find ${USER_IMG_PATH} -type f -printf '%f\n'|sort)"
 					fi
 					;;
 			esac
