@@ -1137,7 +1137,7 @@ create_network() {
 	# save disable_ipv6 setting of host
 	local _host_ipv6_setting="$(< /proc/sys/net/ipv6/conf/default/disable_ipv6)"
 	# disable ipv6 for sure
-	if ${DISABLE_IPV6}; then
+	if ${DISABLE_IPV6} && [ $(id -u) = 0 ]; then
 		sysctl -wq net.ipv6.conf.default.disable_ipv6=1
 	fi
 
@@ -1178,7 +1178,7 @@ create_network() {
 	fi
 
 	# set disable_ipv6=1 to previous setting
-	if ${DISABLE_IPV6}; then
+	if ${DISABLE_IPV6} && [ $(id -u) = 0 ]; then
 		sysctl -wq net.ipv6.conf.default.disable_ipv6="${_host_ipv6_setting}"
 	fi
 }
@@ -1442,7 +1442,7 @@ vm_start(){
 		# save disable_ipv6 setting of host
 		local _host_ipv6_setting="$(< /proc/sys/net/ipv6/conf/default/disable_ipv6)"
 		# disable ipv6 for sure
-		if ${DISABLE_IPV6}; then
+		if ${DISABLE_IPV6} && [ $(id -u) = 0 ]; then
 			sysctl -wq net.ipv6.conf.default.disable_ipv6=1
 		fi
 
@@ -1450,7 +1450,7 @@ vm_start(){
 		TMPDIR=${TMP_DIR} ${VM_QEMU_BIN} "${myconfig[@]}" >/dev/null
 
 		# set disable_ipv6=1 to previous setting
-		if ${DISABLE_IPV6}; then
+		if ${DISABLE_IPV6} && [ $(id -u) = 0 ]; then
 			sysctl -wq net.ipv6.conf.default.disable_ipv6="${_host_ipv6_setting}"
 		fi
 
