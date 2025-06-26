@@ -550,7 +550,7 @@ _cfgcheck(){
 	# if script runs as root respect VM_USER setting from config file
 	# otherwise use current running user
 	SET_USER="true"
-	if ${ROOT_ENABLED} then
+	if ${ROOT_ENABLED}; then
 		if [ -n "${VM_USER}" ]; then
 			if ! $(getent passwd ${VM_USER} >/dev/null 2>&1); then
 				echo "User \"${VM_USER}\" not found. User set to nobody" | (logwarn)
