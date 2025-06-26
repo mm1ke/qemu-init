@@ -59,21 +59,6 @@ loginfon() { while IFS='' read -r line; do >&2 echo -en "${GREEN} * ${NOCOLOR}${
 logwarn() { while IFS='' read -r line; do >&2 echo -e "${YELLOW} * ${NOCOLOR} Warning: ${line}"; done }
 logerr() { while IFS='' read -r line; do >&2 echo -e "${LIGHTRED} * ${NOCOLOR}${line}"; done }
 
-# check PID_DIR and TMP_DIR
-# root started vms are system vms and have a different PID_DIR location
-PID_DIR="/run/kvm"
-if [ $(id -u) = 0 ]; then
-	[ -d ${PID_DIR} ] || mkdir ${PID_DIR}
-	TMP_DIR="/tmp"
-else
-	PID_DIR="/run/user/$(id -u)"
-	if [ -n "${TMP_DIR}" ]; then
-		[ -w ${TMP_DIR} ] || TMP_DIR="/run/user/$(id -u)"
-	else
-		TMP_DIR="/run/user/$(id -u)"
-	fi
-fi
-
 # check if the qemu guest agent is available
 QGA_AVAILABLE=false
 if $(command -v ${QGA} > /dev/null) ; then
@@ -84,7 +69,26 @@ SPICY_AVAILABLE=false
 if $(command -v ${SPICY} > /dev/null) ; then
 	SPICY_AVAILABLE=true
 fi
+# check if the script is running as root
+ROOT_ENABLED=false
+if [ $(id -u) = 0 ]; then
+	ROOT_ENABLED=true
+fi
 
+# check PID_DIR and TMP_DIR
+# root started vms are system vms and have a different PID_DIR location
+PID_DIR="/run/kvm"
+if ${ROOT_ENABLED}; then
+	[ -d ${PID_DIR} ] || mkdir ${PID_DIR}
+	TMP_DIR="/tmp"
+else
+	PID_DIR="/run/user/$(id -u)"
+	if [ -n "${TMP_DIR}" ]; then
+		[ -w ${TMP_DIR} ] || TMP_DIR="/run/user/$(id -u)"
+	else
+		TMP_DIR="/run/user/$(id -u)"
+	fi
+fi
 
 _dry_run_check(){
 	if ${DRYRUN}; then
@@ -546,7 +550,7 @@ _cfgcheck(){
 	# if script runs as root respect VM_USER setting from config file
 	# otherwise use current running user
 	SET_USER="true"
-	if [ $(id -u) = 0 ]; then
+	if ${ROOT_ENABLED} then
 		if [ -n "${VM_USER}" ]; then
 			if ! $(getent passwd ${VM_USER} >/dev/null 2>&1); then
 				echo "User \"${VM_USER}\" not found. User set to nobody" | (logwarn)
@@ -575,7 +579,7 @@ _cfgcheck(){
 			fi
 		fi
 	}
-	if [ $(id -u) = 0 ]; then
+	if ${ROOT_ENABLED}; then
 		_check_xauth "${VM_USER}"
 	else
 		_check_xauth "$(id -un)"
@@ -1112,7 +1116,7 @@ create_tpm2() {
 	TPM2_CMD="${SWTPM} socket -d --tpm2 --tpmstate dir=${PID_DIR} --ctrl type=unixio,path=${VMTPM2} -r ${VM_USER}"
 	# to create tpm2 we need to run the commands as root
 	echo "Creating TPM2 interface for ${VMNAME}" | (loginfo)
-	if [ $(id -u) = 0 ]; then
+	if ${ROOT_ENABLED}; then
 		/bin/sh -c "${TPM2_CMD}"
 	else
 		if ! $(su -l root -c "${TPM2_CMD}"); then
@@ -1137,7 +1141,7 @@ create_network() {
 	# save disable_ipv6 setting of host
 	local _host_ipv6_setting="$(< /proc/sys/net/ipv6/conf/default/disable_ipv6)"
 	# disable ipv6 for sure
-	if ${DISABLE_IPV6} && [ $(id -u) = 0 ]; then
+	if ${DISABLE_IPV6} && ${ROOT_ENABLED}; then
 		sysctl -wq net.ipv6.conf.default.disable_ipv6=1
 	fi
 
@@ -1168,7 +1172,7 @@ create_network() {
 	done
 
 	# to create tap we need to run the commands as root
-	if [ $(id -u) = 0 ]; then
+	if ${ROOT_ENABLED}; then
 		/bin/sh -c "${CREATE_TAP}"
 	else
 		if ! $(su -l root -c "${CREATE_TAP}"); then
@@ -1178,7 +1182,7 @@ create_network() {
 	fi
 
 	# set disable_ipv6=1 to previous setting
-	if ${DISABLE_IPV6} && [ $(id -u) = 0 ]; then
+	if ${DISABLE_IPV6} && ${ROOT_ENABLED}; then
 		sysctl -wq net.ipv6.conf.default.disable_ipv6="${_host_ipv6_setting}"
 	fi
 }
@@ -1204,7 +1208,7 @@ delete_network() {
 			else
 				# print a warning if tap devices doesn't belong to user (only for non-root
 				# users)
-				if ! [ $(id -u) = 0 ]; then
+				if ! ${ROOT_ENABLED}; then
 					echo "\"${singleint}\" belongs to user: $(cat /sys/class/net/${singleint}/owner)" | (logwarn)
 				fi
 				read -r -d '' TAP <<- EOM
@@ -1224,7 +1228,7 @@ delete_network() {
 	done
 
 	# to delete tap we need to run the commands as root
-	if [ $(id -u) = 0 ]; then
+	if ${ROOT_ENABLED}; then
 		/bin/sh -c "${DELETE_TAP}"
 	else
 		if ! $(su -l root -c "${DELETE_TAP}"); then
@@ -1442,7 +1446,7 @@ vm_start(){
 		# save disable_ipv6 setting of host
 		local _host_ipv6_setting="$(< /proc/sys/net/ipv6/conf/default/disable_ipv6)"
 		# disable ipv6 for sure
-		if ${DISABLE_IPV6} && [ $(id -u) = 0 ]; then
+		if ${DISABLE_IPV6} && ${ROOT_ENABLED}; then
 			sysctl -wq net.ipv6.conf.default.disable_ipv6=1
 		fi
 
@@ -1450,7 +1454,7 @@ vm_start(){
 		TMPDIR=${TMP_DIR} ${VM_QEMU_BIN} "${myconfig[@]}" >/dev/null
 
 		# set disable_ipv6=1 to previous setting
-		if ${DISABLE_IPV6} && [ $(id -u) = 0 ]; then
+		if ${DISABLE_IPV6} && ${ROOT_ENABLED}; then
 			sysctl -wq net.ipv6.conf.default.disable_ipv6="${_host_ipv6_setting}"
 		fi
 
@@ -1579,7 +1583,7 @@ vm_stop(){
 
 	# for some reason when running as root qemu doesn't clean up pid/sock files
 	# after we stopped a vm. So lets clean them up manually.
-	[ $(id -u) = 0 ] && __vm_cleanup
+	${ROOT_ENABLED} && __vm_cleanup
 }
 
 usage() {
