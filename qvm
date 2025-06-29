@@ -90,6 +90,21 @@ else
 	fi
 fi
 
+HOST_IPV6_SETTING=""
+# disable ipv6 per default when creating/starting networkdevices/vms
+# will be set to the previous option after creating/starting
+_host_toggle_disable_ipv6(){
+	if ${ROOT_ENABLED} && ${DISABLE_IPV6}; then
+		if [ -z "${HOST_IPV6_SETTING}" ]; then
+			local HOST_IPV6_SETTING="$(< /proc/sys/net/ipv6/conf/default/disable_ipv6)"
+			sysctl -wq net.ipv6.conf.default.disable_ipv6=1
+		else
+			sysctl -wq net.ipv6.conf.default.disable_ipv6="${HOST_IPV6_SETTING}"
+			unset HOST_IPV6_SETTING
+		fi
+	fi
+}
+
 _dry_run_check(){
 	if ${DRYRUN}; then
 		return 0
@@ -160,6 +175,7 @@ _cfg_network_check(){
 		_vhost_set=",vhost=on"
 	fi
 
+	VM_NET=( )
 	if [ -n "${_vm_interfaces}" ]; then
 		for single_net in "${_vm_interfaces[@]}"; do
 			local net_typ="$(echo ${single_net}|cut -d';' -f1)"
@@ -219,9 +235,10 @@ _cfg_network_check(){
 						if ${_random_mac}; then
 							echo "MAC address \"${net_mac}\" for ${net_qtp} is random and will be lost after shutdown" | (logwarn)
 						fi
-						VM_NET="${VM_NET} \
-							-netdev tap,id="${VMNAME}_${_net_id}",ifname=${net_qtp},script=no,downscript=no${_vhost_set} \
-							-device ${net_drv},netdev="${VMNAME}_${_net_id}",mac=${net_mac}"
+						VM_NET+=(
+							"-netdev tap,id=${VMNAME}_${_net_id},ifname=${net_qtp},script=no,downscript=no${_vhost_set}"
+							"-device ${net_drv},netdev=${VMNAME}_${_net_id},mac=${net_mac}"
+						)
 					# random interfaces
 					else
 						# get the id nummber for qtap...
@@ -231,9 +248,10 @@ _cfg_network_check(){
 						if ${_random_mac}; then
 							echo "MAC address \"${net_mac}\" for qtap${_net_id} is random and will be lost after shutdown" | (logwarn)
 						fi
-						VM_NET="${VM_NET} \
-							-netdev tap,id="${VMNAME}_${_net_id}",ifname=qtap${_net_id},script=no,downscript=no${_vhost_set} \
-							-device ${net_drv},netdev="${VMNAME}_${_net_id}",mac=${net_mac}"
+						VM_NET+=(
+							"-netdev tap,id=${VMNAME}_${_net_id},ifname=qtap${_net_id},script=no,downscript=no${_vhost_set}"
+							"-device ${net_drv},netdev=${VMNAME}_${_net_id},mac=${net_mac}"
+						)
 						# save interfaces to create later
 						NET_INT+=( ${net_brd},qtap${_net_id} )
 					fi
@@ -248,9 +266,10 @@ _cfg_network_check(){
 					if ${_random_mac}; then
 						echo "MAC address \"${net_mac}\" for usernet is random and will be lost after shutdown" | (logwarn)
 					fi
-					VM_NET="${VM_NET} \
-							-netdev user,id=${VMNAME}_${_net_id} \
-							-device ${net_drv},netdev="${VMNAME}_${_net_id}",mac=${net_mac}"
+					VM_NET+=(
+						"-netdev user,id=${VMNAME}_${_net_id}"
+						"-device ${net_drv},netdev=${VMNAME}_${_net_id},mac=${net_mac}"
+					)
 					;;
 
 				bridge)
@@ -274,21 +293,22 @@ _cfg_network_check(){
 						echo "No bridge device setup! ${DEFAULT_MSG}" | (logerr)
 						_dry_run_check || return 1
 					fi
-					VM_NET="${VM_NET} \
-						-netdev bridge,br=${net_brd},id=${VMNAME}_${_net_id} \
-						-device ${net_drv},netdev=${VMNAME}_${_net_id},mac=${net_mac}"
+					VM_NET+=(
+						"-netdev bridge,br=${net_brd},id=${VMNAME}_${_net_id}"
+						"-device ${net_drv},netdev=${VMNAME}_${_net_id},mac=${net_mac}"
+					)
 					;;
 
 				*)
 					echo "Unknow Network Typ. Network will be disabled" | (logwarn)
-					VM_NET="${VM_NET} -net none"
+					VM_NET=( "-net none" )
 					continue
 					;;
 			esac
 			_net_id=$(expr ${_net_id} + 1)
 		done
 	else
-		VM_NET="-net none"
+		VM_NET=( "-net none" )
 	fi
 }
 
@@ -307,6 +327,7 @@ _cfg_9p_check() {
 	local _9p_id=0
 
 	if [ -n "${_vm_9pshare}" ]; then
+		VM_9P=( )
 		for single_9p in "${_vm_9pshare[@]}"; do
 			local share_name="$(echo ${single_9p}|cut -d';' -f1)"
 			local share_path="$(echo ${single_9p}|cut -sd';' -f2)"
@@ -321,9 +342,10 @@ _cfg_9p_check() {
 			share_secm=${share_secm:-none}
 			share_read=${share_read:-off}
 
-			VM_9P="${VM_9P} \
-				-fsdev local,id="${VMNAME}_9p_${_9p_id}",path="${share_path}",security_model="${share_secm}",readonly="${share_read}" \
-				-device virtio-9p-pci,fsdev="${VMNAME}_9p_${_9p_id}",mount_tag="${share_name}""
+			VM_9P+=(
+				"-fsdev local,id=${VMNAME}_9p_${_9p_id},path=${share_path},security_model=${share_secm},readonly=${share_read}"
+				"-device virtio-9p-pci,fsdev=${VMNAME}_9p_${_9p_id},mount_tag=${share_name}"
+			)
 			# print out 9p settings
 			echo "Adding 9P mount-tag: \"${share_name}\" sharing \"${share_path}\" with security \"${share_secm}\"" | (loginfo)
 
@@ -348,6 +370,7 @@ _cfg_vfsd_check() {
 
 
 	if [ -n "${_vm_vfsdshare}" ]; then
+		VM_VFSD=( )
 		for single_vfsd in "${_vm_vfsdshare[@]}"; do
 			local share_name="$(echo ${single_vfsd}|cut -d';' -f1)"
 			local share_path="$(echo ${single_vfsd}|cut -sd';' -f2)"
@@ -361,9 +384,10 @@ _cfg_vfsd_check() {
 			# default settings
 			share_cache=${share_cache:-auto}
 
-			VM_VFSD="${VM_VFSD} \
-				-chardev socket,id="${VMNAME}_vfsd_${_vfsd_id}",path=${VMVFSDPID}${share_name} \
-				-device vhost-user-fs-pci,queue-size=1024,chardev="${VMNAME}_vfsd_${_vfsd_id}",tag=${share_name}"
+			VM_VFSD+=(
+				"-chardev socket,id=${VMNAME}_vfsd_${_vfsd_id},path=${VMVFSDPID}${share_name}"
+				"-device vhost-user-fs-pci,queue-size=1024,chardev=${VMNAME}_vfsd_${_vfsd_id},tag=${share_name}"
+			)
 
 			VM_VFSD_START+=( "--socket-path=${VMVFSDPID}${share_name} --shared-dir ${share_path} --cache ${share_cache} --syslog" )
 
@@ -389,6 +413,7 @@ _cfg_harddisk_check() {
 	done
 
 	if [ -n "${_vm_harddisk}" ]; then
+		VM_HD=( )
 		for single_hd in "${_vm_harddisk[@]}"; do
 			local hd_path="$(echo ${single_hd}|cut -d';' -f1)"
 			local hd_if="$(echo ${single_hd}|cut -sd';' -f2)"
@@ -412,8 +437,7 @@ _cfg_harddisk_check() {
 			[ -b "${hd_path}" ] && hd_path="${hd_path},format=raw"
 			[ "${hd_path##*.}" = "raw" ] && hd_path="${hd_path},format=raw"
 
-			VM_HD="${VM_HD} \
-				-drive file=${hd_path},if=${hd_if},cache=${hd_cache},aio=${hd_aio}"
+			VM_HD+=( "-drive file=${hd_path},if=${hd_if},cache=${hd_cache},aio=${hd_aio}" )
 		done
 	fi
 }
@@ -471,6 +495,7 @@ _cfg_audio_check() {
 
 	local _audio_id=0
 	if [ -n "${_vm_audio}" ]; then
+		VM_SOUND=( )
 		for single_audio in "${_vm_audio[@]}"; do
 			local audio_dev="$(echo ${single_audio}|cut -d';' -f1)"
 			local audio_hw="$(echo ${single_audio}|cut -sd';' -f2)"
@@ -505,7 +530,7 @@ _cfg_audio_check() {
 				esac
 			fi
 
-			VM_SOUND="${VM_SOUND} ${audio_dev} ${audio_hw}"
+			VM_SOUND+=( "${audio_dev}" "${audio_hw}" )
 
 			_audio_id=$(expr ${_audio_id} + 1)
 		done
@@ -514,7 +539,6 @@ _cfg_audio_check() {
 
 _cfgcheck(){
 	# default settings
-	VM_ENABLE_GL=$(echo ${VM_ENABLE_GL:-false})
 	VM_DISPLAY_MODE=$(echo ${VM_DISPLAY_MODE:-none})
 
 	declare -a _tmp_vm_dev=("${VM_DEVICES}" "${VM_DEVICES0}" "${VM_DEVICES1}" "${VM_DEVICES2}" "${VM_DEVICES3}" \
@@ -529,20 +553,15 @@ _cfgcheck(){
 	done
 
 	# directly add all vm_devices additions to the config. Nothing to check since simply anything can be added.
-	for single_dev in "${_vm_dev[@]}"; do
-		VM_DEV="${VM_DEV} ${single_dev}"
-	done
+	if [ -n "${_vm_dev}" ]; then
+		VM_DEV=( )
+		for single_dev in "${_vm_dev[@]}"; do
+			VM_DEV+=( "${single_dev}" )
+		done
+	fi
 
 	if (${VM_ENABLE_SNAPSHOTMODE:-false}); then
 		echo "SNAPSHOT MODE! Changes to the guest system won't be saved!" | (logwarn)
-	fi
-
-	# enable OpenGL only for the virtio display driver
-	if ${VM_ENABLE_GL}; then
-		if ! [ "${VM_VGA}" = "virtio" ] && ! [ "${VM_DISPLAY_MODE}" = "none" ]; then
-			echo "Virtio GPU-Driver and SDL/GTK must be enabled for OpenGL" | (logwarn)
-			VM_ENABLE_GL=false
-		fi
 	fi
 
 	# basic tests/settings
@@ -555,34 +574,16 @@ _cfgcheck(){
 			if ! $(getent passwd ${VM_USER} >/dev/null 2>&1); then
 				echo "User \"${VM_USER}\" not found. User set to nobody" | (logwarn)
 				VM_USER="nobody"
-				VM_ENABLE_GL=false
 				VM_DISPLAY_MODE="none"
 			fi
 		else
 			echo "No user set. User nobody will be used" | (logwarn)
 			VM_USER="nobody"
-			VM_ENABLE_GL=false
 			VM_DISPLAY_MODE="none"
 		fi
 	else
 		# if run as non root, set SET_USER to false to avoid using -runas
 		SET_USER="false"
-	fi
-
-	# check if SDL can be enabled (needs .Xauthority file)
-	_check_xauth() {
-		if [ "${VM_DISPLAY_MODE}" == "sdl" ]; then
-			if ! [ -e /home/${1}/.Xauthority ]; then
-				echo "No Xauthority file for user \"${1}\". Disabling SDL output. You might want to use GTK instead" | (logwarn)
-				VM_ENABLE_GL=false
-				VM_DISPLAY_MODE="none"
-			fi
-		fi
-	}
-	if ${ROOT_ENABLED}; then
-		_check_xauth "${VM_USER}"
-	else
-		_check_xauth "$(id -un)"
 	fi
 
 	# guests can't boot from other devices if vm_kernel/vm_initrd is used
@@ -614,99 +615,84 @@ _cfgcheck(){
 }
 
 
-_myconfig(){
-	# basic config
-	myconfig=(
-		-name ${VMNAME}
-		-monitor unix:${VMSOCK},server=on,wait=off
-		-pidfile ${VMPID}
-		-device virtio-balloon
-		-m ${VM_MEMORY:-1G}
-		-smp ${VM_SMP:-2}
-		-machine ${VM_MACHINE:-pc}
-		-k ${VM_LC:-de}
-		-cpu ${VM_CPU:-host}
-		-accel ${VM_ACCEL:-kvm}
-	)
+_myconfig() {
 
-	# set runas user
-	${SET_USER} && myconfig+=(-run-with user="${VM_USER}")
+	# empty default config
+	myconfig=( )
 
-	if [ -n "${VM_KERNEL}" ]; then
-		myconfig+=(
-			-kernel ${VM_KERNEL}
-			-initrd ${VM_INITRD}
-		)
-		[ -n "${VM_APPEND}" ] && myconfig+=(-append "${VM_APPEND}")
-	fi
+	# default pretty config output
+	read -r -d '' pretty_config <<EOM
+$(echo -e "${GREEN} * ${NOCOLOR}Startparameter for ${VMNAME}")
 
+EOM
+
+	# config_gen populates myconfig with all passed paramaters
+	# additionally it also populates pretty_config which can print
+	# all parameters with dryrun
+	config_gen() {
+		conf_setting=${1}
+		conf_text=${2}
+
+		myconfig+=(${1})
+
+		read -r -d '' pretty_config <<EOM
+${pretty_config}$(if [ -n "${2}" ]; then echo -e "\n\n${GREEN} * ${NOCOLOR}${2}"; fi)
+$(if [ -n "${1}" ]; then echo -e " ${1}"; fi)
+EOM
+	}
+
+	# set default parameters
+	config_gen "-name ${VMNAME}"
+	config_gen "-monitor unix:${VMSOCK},server=on,wait=off"
+	config_gen "-pidfile ${VMPID}"
+	config_gen "-device virtio-balloon"
+	config_gen "-m ${VM_MEMORY:-1G}"
+	config_gen "-smp ${VM_SMP:-2}"
+	config_gen "-machine ${VM_MACHINE:-pc}"
+	config_gen "-k ${VM_LC:-de}"
+	config_gen "-cpu ${VM_CPU:-host}"
+	config_gen "-accel ${VM_ACCEL:-kvm}"
 	# enable/disable usb support
-	(${VM_ENABLE_USB:-true}) && myconfig+=(-usb)
+	(${VM_ENABLE_USB:-true}) && config_gen "-usb"
 	# daemonize true/false
-	(${VM_ENABLE_DAEMONIZE:-true}) && myconfig+=(-daemonize)
+	(${VM_ENABLE_DAEMONIZE:-true}) && config_gen "-daemonize"
 	# snapshotmode on/off
-	(${VM_ENABLE_SNAPSHOTMODE:-false}) && myconfig+=(-snapshot)
+	(${VM_ENABLE_SNAPSHOTMODE:-false}) && config_gen "-snapshot" "Snapshot Mode enabled"
+	# set runas user
+	${SET_USER} && config_gen "-run-with user=${VM_USER}"
+	[ -z "${VM_CDROM}" ] || config_gen "-cdrom ${VM_CDROM}" "CDROM Settings"
 
-	# spice virtual serial port (copy/paste)
-	# there are two possiblities for clipboard sharing
-	# qemu-vdagent and spicevmc
-	# if display mode is set to gtk we choose to use qemu-vdagent for clipboard
-	# sharing. this however disables it for spice connections
-	if $(echo ${VM_DISPLAY_MODE}| grep -q ^gtk); then
-		(${VM_ENABLE_VIRTSERIAL:-true}) && myconfig+=(
-			-chardev qemu-vdagent,id=vdagent,name=vdagent,clipboard=on,mouse=off \
-			-device virtio-serial,max_ports=2 \
-			-device virtserialport,chardev=vdagent,name=com.redhat.spice.0
-		)
-	else
-		(${VM_ENABLE_VIRTSERIAL:-true}) && myconfig+=(
-			-chardev spicevmc,id=vdagent,name=vdagent
-			-device virtio-serial
-			-device virtserialport,chardev=vdagent,name=com.redhat.spice.0
-		)
+	#
+	# Output Settings
+	# 
+	# VM_VGA is the video card type
+	# VM_DISPLAY_MODE sets the mode of the display. supported by qvm right now is gtk/sdl
+	#
+	# VM_ENABLE_SPICE or VM_ENABLE_VNC configures spice or vnc access (remote-access)
+		
+	if [ -n "${VM_VGA}" ]; then
+		case ${VM_VGA} in
+			venus)
+				config_gen "-device virtio-vga-gl,hostmem=${VM_MEMORY:-1G},blob=true,venus=true" "VGA Settings"
+				VM_ENABLE_VPMEM=true
+				if [ ${VM_DISPLAY_MODE} = "none" ]; then
+					echo "Error: Displaymode needs to be enabled for venus"
+					exit 1
+				fi
+				if ${VM_ENABLE_SPICE} || ${VM_ENABLE_VNC}; then
+					echo "Warn: Spice/VNC doesn't work with venus and got disabled"
+				fi
+				;;
+			*)
+				config_gen "-vga ${VM_VGA}" "VGA Settings"
+				;;
+		esac
 	fi
-	# qemu guest agent (qga)
-	(${VM_ENABLE_QGA:-false}) && myconfig+=(
-		-device virtio-serial
-		-chardev socket,id=${VMNAME}-qga,path=${VMQGASOCK},server=on,wait=off
-		-device virtserialport,chardev=${VMNAME}-qga,name=org.qemu.guest_agent.0
-	)
-	# qemu machine protocol (qmp)
-	(${VM_ENABLE_QMP:-false}) && myconfig+=(
-		-chardev socket,id=${VMNAME}-qmp,path=${VMQMPSOCK},server=on,wait=off
-		-mon chardev=${VMNAME}-qmp,mode=control,pretty=on
-	)
-	[ -n "${VM_VFSD}" ] && VM_ENABLE_VPMEM=true
-	# virtio pmem device
-	(${VM_ENABLE_VPMEM:-false}) && myconfig+=(
-		-object memory-backend-file,id=mem1,size=${VM_MEMORY:-1G},mem-path=/dev/shm/,share=on
-		-numa node,memdev=mem1
-	)
-	# tpm2 device
-	(${VM_ENABLE_TPM2:-false}) && myconfig+=(
-		-chardev socket,id=${VMNAME}-chrtpm,path=${VMTPM2}
-		-tpmdev emulator,id=${VMNAME}-tpm0,chardev=${VMNAME}-chrtpm
-		-device tpm-tis,tpmdev=${VMNAME}-tpm0
-	)
 
-	# enable pcie port
-	local _pcie_ports="${VM_PCIE_PORTS:-0}"
-	while [ ${_pcie_ports} -gt 0 ]; do
-		myconfig+=(
-			-device pcie-root-port,id=pcie-${_pcie_ports},slot=${_pcie_ports}
-		)
-		_pcie_ports=$(expr ${_pcie_ports} - 1)
-	done
-
-	# sdl/gtk output
 	if ! [ ${VM_DISPLAY_MODE} = "none" ]; then
 		case ${VM_DISPLAY_MODE} in
 			gtk*|sdl*)
-				if (${VM_ENABLE_GL}); then
-					myconfig+=(-display ${VM_DISPLAY_MODE},gl=on)
-				else
-					myconfig+=(-display ${VM_DISPLAY_MODE})
-				fi
+				config_gen "-display ${VM_DISPLAY_MODE}" "${VM_DISPLAY_MODE} enabled"
 				;;
 			*)
 				echo "Error: ${VM_DISPLAY_MODE} not supported" | (logerr)
@@ -714,72 +700,144 @@ _myconfig(){
 				;;
 		esac
 	fi
-
-	# enable (multiple) usb redir devices
-	local _usb_redir="${VM_USB_REDIR:-0}"
-	while [ ${_usb_redir} -gt 0 ]; do
-		myconfig+=(
-			-chardev spicevmc,name=usbredir,id=usbredirchardev_${_usb_redir}
-			-device usb-redir,chardev=usbredirchardev_${_usb_redir},id=usbredirdev_${_usb_redir},debug=3
-		)
-		_usb_redir=$(expr ${_usb_redir} - 1)
-	done
-
 	# remote access settings
 	# passwords are set after a vm started
 	if ${VM_ENABLE_SPICE}; then
+		config_gen "" "Spice Remote Access enabled"
 		if [ -z "${spice_password}" ]; then
-			myconfig+=(-spice port=${spice_port},addr=${spice_ip},disable-ticketing=on)
+			config_gen "-spice port=${spice_port},addr=${spice_ip},disable-ticketing=on"
 		else
-			myconfig+=(-spice port=${spice_port},addr=${spice_ip})
+			config_gen "-spice port=${spice_port},addr=${spice_ip})"
 		fi
 	fi
 	if ${VM_ENABLE_VNC}; then
+		config_gen "" "VNC Remote Access enabled"
 		if [ -n "${vnc_password}" ]; then
-			myconfig+=(-vnc ${vnc_ip}:${vnc_port},password)
+			config_gen "-vnc ${vnc_ip}:${vnc_port},password)"
 		else
-			myconfig+=(-vnc ${vnc_ip}:${vnc_port})
+			config_gen "-vnc ${vnc_ip}:${vnc_port})"
 		fi
 	fi
 
 	if ! ${VM_ENABLE_SPICE} && ! ${VM_ENABLE_VNC} && ! ${VM_ENABLE_DAEMONIZE}; then
-		! [ ${VM_DISPLAY_MODE} = "none" ] || myconfig+=(-nographic)
+		! [ ${VM_DISPLAY_MODE} = "none" ] || config_gen "-nographic" "Disable Graphic output"
 	fi
+
+	# spice virtual serial port (copy/paste)
+	# 
+	# there are two possiblities for clipboard sharing
+	# qemu-vdagent and spicevmc
+	# if display mode is set to gtk we choose to use qemu-vdagent for clipboard
+	# sharing. this however disables it for spice connections
+	if $(echo ${VM_DISPLAY_MODE}| grep -q ^gtk); then
+		if ${VM_ENABLE_VIRTSERIAL:-true}; then
+ 			config_gen "-device virtio-serial,max_ports=2" "Virtual Serial Port (qemu-vdagent)"
+ 			config_gen "-chardev qemu-vdagent,id=${VMNAME}-qemu-vdagent,name=vdagent,clipboard=on,mouse=off" "Virtual Serial Port (qemu-vdagent)"
+			config_gen "-device virtserialport,chardev=${VMNAME}-qemu-vdagent,name=com.redhat.spice.0"
+		fi
+	else
+		if ${VM_ENABLE_VIRTSERIAL:-true}; then
+			config_gen "-device virtio-serial" "Virtual Serial Port (Spicevmc)"
+ 			config_gen "-chardev spicevmc,id=${VMNAME}-spice-vdagent,name=vdagent"
+			config_gen "-device virtserialport,chardev=${VMNAME}-spice-vdagent,name=com.redhat.spice.0"
+		fi
+	fi
+	# qemu guest agent (qga)
+	if ${VM_ENABLE_QGA:-false}; then
+		config_gen "-device virtio-serial" "Qemu Guest Agent Device"
+		config_gen "-chardev socket,id=${VMNAME}-qga,path=${VMQGASOCK},server=on,wait=off"
+		config_gen "-device virtserialport,chardev=${VMNAME}-qga,name=org.qemu.guest_agent.0"
+	fi
+	# qemu machine protocol (qmp)
+	if ${VM_ENABLE_QMP:-false}; then
+		config_gen "-chardev socket,id=${VMNAME}-qmp,path=${VMQMPSOCK},server=on,wait=off" "Qemu Machine Protocol QMP"
+		config_gen "-mon chardev=${VMNAME}-qmp,mode=control,pretty=on"
+	fi
+	# PMEM is required for VFSD
+	[ -n "${VM_VFSD}" ] && VM_ENABLE_VPMEM=true
+	# virtio pmem device
+	if ${VM_ENABLE_VPMEM:-false}; then
+		config_gen "-object memory-backend-file,id=${VMNAME}-mem1,size=${VM_MEMORY:-1G},mem-path=/dev/shm/,share=on" "Virtio PMEM Device"
+		config_gen "-numa node,memdev=${VMNAME}-mem1"
+	fi
+	# tpm2 device
+	if ${VM_ENABLE_TPM2:-false}; then
+		config_gen "-chardev socket,id=${VMNAME}-chrtpm,path=${VMTPM2}" "TPM2 Device"
+		config_gen "-tpmdev emulator,id=${VMNAME}-tpm0,chardev=${VMNAME}-chrtpm"
+		config_gen "-device tpm-tis,tpmdev=${VMNAME}-tpm0"
+	fi
+
+	# enable pcie port
+	local _pcie_ports="${VM_PCIE_PORTS:-0}"
+	[ ${_pcie_ports} -gt 0 ] && config_gen "" "Enable PCIE Ports"
+	while [ ${_pcie_ports} -gt 0 ]; do
+		config_gen "-device pcie-root-port,id=pcie-${_pcie_ports},slot=${_pcie_ports}"
+		_pcie_ports=$(expr ${_pcie_ports} - 1)
+	done
+	# enable (multiple) usb redir devices
+	local _usb_redir="${VM_USB_REDIR:-0}"
+	[ ${_usb_redir} -gt 0 ] && config_gen "" "Enable USB Redir Ports"
+	while [ ${_usb_redir} -gt 0 ]; do
+		config_gen "-chardev spicevmc,name=usbredir,id=usbredirchardev_${_usb_redir}"
+		config_gen "-device usb-redir,chardev=usbredirchardev_${_usb_redir},id=usbredirdev_${_usb_redir},debug=3"
+		_usb_redir=$(expr ${_usb_redir} - 1)
+	done
+
 
 	# enable/disable harddisks
-	[ -z "${VM_HD}" ] || myconfig+=(${VM_HD})
+	if [ -n "${VM_HD}" ]; then
+		config_gen "" "Harddisk Settings"
+		local i; for i in "${VM_HD[@]}"; do config_gen "${i}"; done
+	fi
 	# network settings
 	if ${DISABLE_NET}; then
-		myconfig+=(-net none)
+		config_gen "-net none" "Network is disabled"
 	else
-		[ -z "${VM_NET}" ] || myconfig+=(${VM_NET})
+		config_gen "" "Network Settings"
+		local i; for i in "${VM_NET[@]}"; do config_gen "${i}"; done
 	fi
 	# 9p shares
-	[ -z "${VM_9P}" ] || myconfig+=(${VM_9P})
-	# virtiofsd shares
-	[ -z "${VM_VFSD}" ] || myconfig+=(${VM_VFSD})
-	# display settings
-	[ -z "${VM_VGA}" ] || myconfig+=(-vga ${VM_VGA})
-	# audio settings
-	[ -z "${VM_SOUND}" ] || myconfig+=(${VM_SOUND})
-	# other devices
-	[ -z "${VM_DEV}" ] || myconfig+=(${VM_DEV})
-	# cdrom settings
-	[ -z "${VM_CDROM}" ] || myconfig+=(-cdrom ${VM_CDROM})
-
-	if [ -n "${VM_BOOT_DEV}" ]; then
-		case ${VM_BOOT_DEV} in
-			floppy|a) myconfig+=(-boot a) ;;
-			harddisk|c) myconfig+=(-boot c) ;;
-			cdrom|d) myconfig+=(-boot d) ;;
-			network|n) myconfig+=(-boot n) ;;
-		esac
+	if [ -n "${VM_9P}" ]; then
+		config_gen "" "9p Shares"
+		local i; for i in "${VM_9P[@]}"; do config_gen "${i}"; done
+	fi
+	# vfsd shares
+	if [ -n "${VM_VFSD}" ]; then
+		config_gen "" "VFSD Shares"
+		local i; for i in "${VM_VFSD[@]}"; do config_gen "${i}"; done
+	fi
+	# sound card settings
+	if [ -n "${VM_SOUND}" ]; then
+		config_gen "" "Sound Devices"
+		local i; for i in "${VM_SOUND[@]}"; do config_gen "${i}"; done
+	fi
+	# additional settings
+	if [ -n "${VM_DEV}" ]; then
+		config_gen "" "Additional Devices"
+		local i; for i in "${VM_DEV[@]}"; do config_gen "${i}"; done
 	fi
 
 	# add qvm parameters (not in configfiles)
 	# used to override default values whten starting vms
-	[ -z "${VM_PARAMETER}" ] ||	myconfig+=(${VM_PARAMETER})
+	[ -z "${VM_PARAMETER}" ] || config_gen "${VM_PARAMETER}" "user qvm overrides"
+
+	if [ -n "${VM_BOOT_DEV}" ]; then
+		case ${VM_BOOT_DEV} in
+			floppy|a) config_gen "-boot a" ;;
+			harddisk|c) config_gen "-boot c" ;;
+			cdrom|d) config_gen "-boot d" ;;
+			network|n) config_gen "-boot n" ;;
+		esac
+	fi
+	# config kernel parameters
+	if [ -n "${VM_KERNEL}" ]; then
+		config_gen "-kernel ${VM_KERNEL} -initrd ${VM_INITRD}" "Kernel Parameter"
+		# [ -n "${VM_APPEND}" ] && config_gen "-append"; config_gen "${VM_APPEND}"
+		[ -n "${VM_APPEND}" ] && myconfig+=(-append "${VM_APPEND}")
+	fi
+
 }
+
 
 # check if a given vm is running and exit if not
 _check_running_vm() {
@@ -1138,12 +1196,7 @@ create_network() {
 	read -r -d '' CREATE_TAP <<- EOM
 	EOM
 
-	# save disable_ipv6 setting of host
-	local _host_ipv6_setting="$(< /proc/sys/net/ipv6/conf/default/disable_ipv6)"
-	# disable ipv6 for sure
-	if ${DISABLE_IPV6} && ${ROOT_ENABLED}; then
-		sysctl -wq net.ipv6.conf.default.disable_ipv6=1
-	fi
+	_host_toggle_disable_ipv6
 
 	for singleint in ${allint}; do
 		local _type="${singleint%%,*}"
@@ -1181,10 +1234,7 @@ create_network() {
 		fi
 	fi
 
-	# set disable_ipv6=1 to previous setting
-	if ${DISABLE_IPV6} && ${ROOT_ENABLED}; then
-		sysctl -wq net.ipv6.conf.default.disable_ipv6="${_host_ipv6_setting}"
-	fi
+	_host_toggle_disable_ipv6
 }
 
 delete_network() {
@@ -1408,9 +1458,13 @@ vm_start(){
 		_myconfig
 
 		if _dry_run_check; then
+			echo "DRYRUN, printing Startparameters"
 			echo "${VM_QEMU_BIN} ${myconfig[@]}"
+			echo
+			echo "${pretty_config}"
+			echo
 			echo "DRYRUN! Exiting now." | (logwarn)
-			exit 1
+			exit
 		fi
 
 		# create virtiofsd shares
@@ -1443,29 +1497,22 @@ vm_start(){
 			echo
 		fi
 
-		# save disable_ipv6 setting of host
-		local _host_ipv6_setting="$(< /proc/sys/net/ipv6/conf/default/disable_ipv6)"
-		# disable ipv6 for sure
-		if ${DISABLE_IPV6} && ${ROOT_ENABLED}; then
-			sysctl -wq net.ipv6.conf.default.disable_ipv6=1
-		fi
+		_host_toggle_disable_ipv6
 
 		# start the actual vm
 		TMPDIR=${TMP_DIR} ${VM_QEMU_BIN} "${myconfig[@]}" >/dev/null
-
-		# set disable_ipv6=1 to previous setting
-		if ${DISABLE_IPV6} && ${ROOT_ENABLED}; then
-			sysctl -wq net.ipv6.conf.default.disable_ipv6="${_host_ipv6_setting}"
-		fi
-
+		# check return code from starting
 		# remove tap devices if the guest system couldn't be started
 		if [ "$?" != "0" ]; then
 			if [ -e "${VMNET}" ]; then
 				echo "Failed to start ${VMNAME}, removing qtap interfaces" | (logerr)
 				delete_network "$(< ${VMNET})"
 			fi
+			_host_toggle_disable_ipv6
 			exit 1
 		fi
+
+		_host_toggle_disable_ipv6
 
 		# set passwords for spice/vnc
 		if [ -n "${spice_password}" ]; then
