@@ -630,9 +630,6 @@ EOM
 	# additionally it also populates pretty_config which can print
 	# all parameters with dryrun
 	config_gen() {
-		conf_setting=${1}
-		conf_text=${2}
-
 		myconfig+=(${1})
 
 		read -r -d '' pretty_config <<EOM
