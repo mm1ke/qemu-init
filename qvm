@@ -622,8 +622,6 @@ _myconfig() {
 
 	# default pretty config output
 	read -r -d '' pretty_config <<EOM
-$(echo -e "${GREEN} * ${NOCOLOR}Startparameter for ${VMNAME}")
-
 EOM
 
 	# config_gen populates myconfig with all passed paramaters
@@ -639,7 +637,7 @@ EOM
 	}
 
 	# set default parameters
-	config_gen "-name ${VMNAME}"
+	config_gen "-name ${VMNAME}" "Default Settings"
 	config_gen "-monitor unix:${VMSOCK},server=on,wait=off"
 	config_gen "-pidfile ${VMPID}"
 	config_gen "-device virtio-balloon"
@@ -689,7 +687,7 @@ EOM
 	if ! [ ${VM_DISPLAY_MODE} = "none" ]; then
 		case ${VM_DISPLAY_MODE} in
 			gtk*|sdl*)
-				config_gen "-display ${VM_DISPLAY_MODE}" "${VM_DISPLAY_MODE} enabled"
+				config_gen "-display ${VM_DISPLAY_MODE}" "Display Mode enabled"
 				;;
 			*)
 				echo "Error: ${VM_DISPLAY_MODE} not supported" | (logerr)
@@ -728,14 +726,14 @@ EOM
 	# sharing. this however disables it for spice connections
 	if $(echo ${VM_DISPLAY_MODE}| grep -q ^gtk); then
 		if ${VM_ENABLE_VIRTSERIAL:-true}; then
- 			config_gen "-device virtio-serial,max_ports=2" "Virtual Serial Port (qemu-vdagent)"
- 			config_gen "-chardev qemu-vdagent,id=${VMNAME}-qemu-vdagent,name=vdagent,clipboard=on,mouse=off" "Virtual Serial Port (qemu-vdagent)"
+			config_gen "-device virtio-serial,max_ports=2" "Virtual Serial Port (qemu-vdagent)"
+			config_gen "-chardev qemu-vdagent,id=${VMNAME}-qemu-vdagent,name=vdagent,clipboard=on,mouse=off"
 			config_gen "-device virtserialport,chardev=${VMNAME}-qemu-vdagent,name=com.redhat.spice.0"
 		fi
 	else
 		if ${VM_ENABLE_VIRTSERIAL:-true}; then
 			config_gen "-device virtio-serial" "Virtual Serial Port (Spicevmc)"
- 			config_gen "-chardev spicevmc,id=${VMNAME}-spice-vdagent,name=vdagent"
+			config_gen "-chardev spicevmc,id=${VMNAME}-spice-vdagent,name=vdagent"
 			config_gen "-device virtserialport,chardev=${VMNAME}-spice-vdagent,name=com.redhat.spice.0"
 		fi
 	fi
@@ -828,9 +826,12 @@ EOM
 	fi
 	# config kernel parameters
 	if [ -n "${VM_KERNEL}" ]; then
-		config_gen "-kernel ${VM_KERNEL} -initrd ${VM_INITRD}" "Kernel Parameter"
+		config_gen "-kernel ${VM_KERNEL} -initrd ${VM_INITRD}" "Kernel Settings"
 		# [ -n "${VM_APPEND}" ] && config_gen "-append"; config_gen "${VM_APPEND}"
-		[ -n "${VM_APPEND}" ] && myconfig+=(-append "${VM_APPEND}")
+		if [ -n "${VM_APPEND}" ]; then
+			myconfig+=(-append "${VM_APPEND}")
+			config_gen "" "Kernel Parameters \n -append ${VM_APPEND}"
+		fi
 	fi
 
 }
@@ -921,7 +922,7 @@ vm_list() {
 				| grep --only-matching --perl-regex "(?<=address\:).*[0-9]" \
 				| head -n1|tr -d '[:space:]')"
 			# don't include the 4 in the regex so the result won't include: (ipv4)
-			local	_vm_vnc_settings="$(echo "info vnc" \
+			local _vm_vnc_settings="$(echo "info vnc" \
 				| ${SOCAT} - unix-connect:${VMSOCK} 2>&1 \
 				| grep --only-matching --perl-regex "(?<=Server\:).*[1,2,3,5,6,7,8,9,0]" \
 				| head -n1|tr -d '[:space:]')"
@@ -1455,8 +1456,12 @@ vm_start(){
 		_myconfig
 
 		if _dry_run_check; then
-			echo "DRYRUN, printing Startparameters"
+			echo
+			echo "Startcommand for ${VMNAME}" | (loginfo)
+			echo
 			echo "${VM_QEMU_BIN} ${myconfig[@]}"
+			echo
+			echo "Startparameter for ${VMNAME}" | (loginfo)
 			echo
 			echo "${pretty_config}"
 			echo
