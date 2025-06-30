@@ -444,13 +444,13 @@ _cfg_harddisk_check() {
 
 _cfg_remote_access_check() {
 	# get interface ip
-	if ${_net_tap_set}; then
-		local local_ip="$(${IP} address show ${BRDEV} \
-			| grep -Eo '[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}' \
-			| head -n1)"
-	else
-		local local_ip="0.0.0.0"
-	fi
+	# if ${_net_tap_set}; then
+	# 	local local_ip="$(${IP} address show ${BRDEV} \
+	# 		| grep -Eo '[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}\.[[:digit:]]{1,3}' \
+	# 		| head -n1)"
+	# else
+	# 	local local_ip="0.0.0.0"
+	# fi
 
 	# remote access spice
 	VM_ENABLE_SPICE="$(echo ${VM_REMOTE_ACCESS_SPICE:-false}|cut -d';' -f1)"
@@ -459,16 +459,16 @@ _cfg_remote_access_check() {
 	if ${VM_ENABLE_SPICE}; then
 		spice_password="$(echo ${VM_REMOTE_ACCESS_SPICE}|cut -sd';' -f2)"
 		spice_ip="$(echo ${VM_REMOTE_ACCESS_SPICE}|cut -sd';' -f3)"
-		[ -z "${spice_ip}" ] && spice_ip="${local_ip}"
+		[ -z "${spice_ip}" ] && spice_ip="0.0.0.0"
 		spice_port="$(echo ${VM_REMOTE_ACCESS_SPICE}|cut -sd';' -f4)"
 		spice_port="$(_check_remote_access_port 580 "${spice_ip}" "${spice_port}")"
 
-		echo "Spice access on ${spice_ip}:${spice_port} (Password: \"${spice_password}\")" | (loginfo)
+		echo " Spice access on ${spice_ip}:${spice_port} (Password: \"${spice_password}\")" | (loginfo)
 	fi
 	if ${VM_ENABLE_VNC}; then
 		vnc_password="$(echo ${VM_REMOTE_ACCESS_VNC}|cut -sd';' -f2)"
 		vnc_ip="$(echo ${VM_REMOTE_ACCESS_VNC}|cut -sd';' -f3)"
-		[ -z "${vnc_ip}" ] && vnc_ip="${local_ip}"
+		[ -z "${vnc_ip}" ] && vnc_ip="0.0.0.0"
 		vnc_port="$(echo ${VM_REMOTE_ACCESS_VNC}|cut -sd';' -f4)"
 		vnc_port="$(expr $(_check_remote_access_port 590 "${vnc_ip}" "${vnc_port}") - 5900)"
 
@@ -669,6 +669,7 @@ EOM
 		case ${VM_VGA} in
 			venus)
 				config_gen "-device virtio-vga-gl,hostmem=${VM_MEMORY:-1G},blob=true,venus=true" "VGA Settings"
+				# required for venus
 				VM_ENABLE_VPMEM=true
 				if [ ${VM_DISPLAY_MODE} = "none" ]; then
 					echo "Error: Displaymode needs to be enabled for venus"
@@ -702,15 +703,15 @@ EOM
 		if [ -z "${spice_password}" ]; then
 			config_gen "-spice port=${spice_port},addr=${spice_ip},disable-ticketing=on"
 		else
-			config_gen "-spice port=${spice_port},addr=${spice_ip})"
+			config_gen "-spice port=${spice_port},addr=${spice_ip}"
 		fi
 	fi
 	if ${VM_ENABLE_VNC}; then
 		config_gen "" "VNC Remote Access enabled"
 		if [ -n "${vnc_password}" ]; then
-			config_gen "-vnc ${vnc_ip}:${vnc_port},password)"
+			config_gen "-vnc ${vnc_ip}:${vnc_port},password"
 		else
-			config_gen "-vnc ${vnc_ip}:${vnc_port})"
+			config_gen "-vnc ${vnc_ip}:${vnc_port}"
 		fi
 	fi
 
@@ -719,6 +720,7 @@ EOM
 	fi
 
 	# spice virtual serial port (copy/paste)
+	# https://www.kraxel.org/blog/2021/05/qemu-cut-paste/
 	# 
 	# there are two possiblities for clipboard sharing
 	# qemu-vdagent and spicevmc
@@ -726,23 +728,27 @@ EOM
 	# sharing. this however disables it for spice connections
 	if $(echo ${VM_DISPLAY_MODE}| grep -q ^gtk); then
 		if ${VM_ENABLE_VIRTSERIAL:-true}; then
-			config_gen "-device virtio-serial,max_ports=2" "Virtual Serial Port (qemu-vdagent)"
-			config_gen "-chardev qemu-vdagent,id=${VMNAME}-qemu-vdagent,name=vdagent,clipboard=on,mouse=off"
-			config_gen "-device virtserialport,chardev=${VMNAME}-qemu-vdagent,name=com.redhat.spice.0"
+			config_gen "-device virtio-serial-pci" "GTK Clipboard Sharing"
+			config_gen "-chardev qemu-vdagent,id=${VMNAME}-qemu,name=vdagent,clipboard=on,mouse=on"
+			config_gen "-device virtserialport,chardev=${VMNAME}-qemu,name=com.redhat.spice.0"
 		fi
 	else
 		if ${VM_ENABLE_VIRTSERIAL:-true}; then
-			config_gen "-device virtio-serial" "Virtual Serial Port (Spicevmc)"
-			config_gen "-chardev spicevmc,id=${VMNAME}-spice-vdagent,name=vdagent"
-			config_gen "-device virtserialport,chardev=${VMNAME}-spice-vdagent,name=com.redhat.spice.0"
+			config_gen "-device virtio-serial-pci" "Spice Clipboard Sharing"
+			config_gen "-chardev spicevmc,id=${VMNAME}-spice,name=vdagent"
+			config_gen "-device virtserialport,chardev=${VMNAME}-spice,name=com.redhat.spice.0"
 		fi
 	fi
+
+
 	# qemu guest agent (qga)
 	if ${VM_ENABLE_QGA:-false}; then
 		config_gen "-device virtio-serial" "Qemu Guest Agent Device"
 		config_gen "-chardev socket,id=${VMNAME}-qga,path=${VMQGASOCK},server=on,wait=off"
 		config_gen "-device virtserialport,chardev=${VMNAME}-qga,name=org.qemu.guest_agent.0"
 	fi
+
+
 	# qemu machine protocol (qmp)
 	if ${VM_ENABLE_QMP:-false}; then
 		config_gen "-chardev socket,id=${VMNAME}-qmp,path=${VMQMPSOCK},server=on,wait=off" "Qemu Machine Protocol QMP"
