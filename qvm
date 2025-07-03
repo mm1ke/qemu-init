@@ -664,6 +664,7 @@ EOM
 	# VM_DISPLAY_MODE sets the mode of the display. supported by qvm right now is gtk/sdl
 	#
 	# VM_ENABLE_SPICE or VM_ENABLE_VNC configures spice or vnc access (remote-access)
+	# https://gist.github.com/peppergrayxyz/fdc9042760273d137dddd3e97034385f
 		
 	if [ -n "${VM_VGA}" ]; then
 		case ${VM_VGA} in
