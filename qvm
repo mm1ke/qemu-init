@@ -1098,7 +1098,7 @@ vm_hw(){
 			fi
 			case ${_type} in
 				network)
-					echo "adding additional pci network device"
+					echo "adding additional PCI network device"
 					if [ -z "${_value1}" ]; then
 						echo "Error: Need bridge interface" | (logerr)
 						exit 1
@@ -1109,18 +1109,18 @@ vm_hw(){
 					awk -v "id=${_id}" -v "var=virtio-net-pci,${_value1}" -i inplace 'BEGIN{FS=OFS="|"} {if (NR==1) {$id = var }; print}' ${VMPCIM}
 					;;
 				harddisk)
-					echo "Adding additonal PCI harddisk (${_value1})" | (loginfo)
+					echo "adding additional PCI harddisk (${_value1})" | (loginfo)
 					local _format="${_value1##*.}"
 					if [ -z ${_value1} ]; then
 						echo "Error: You need to provide a harddisk file."
 						exit 1
 					fi
 					if ! [ -f ${_value1} ]; then
-						if ! [ -f ${IMG_DIR}/${_value1} ]; then
-							echo "Error: ${_value1} is not a regular file" | (logerr)
+						if ! [ -f ${USER_IMG_PATH}/${_value1} ]; then
+							echo "Error: ${USER_IMG_PATH}/${_value1} is not a regular file" | (logerr)
 							exit 1
 						else
-							_value1="${IMG_DIR}/${_value1}"
+							_value1="${USER_IMG_PATH}/${_value1}"
 						fi
 					fi
 					#value1=file
