@@ -1396,7 +1396,7 @@ vm_start(){
 	fi
 	# stop if the config file doesn't exist
 	if ! [ -f "${vm_config_file}" ]; then
-				echo "Config file \"${CFG_DIR}${vm_config_file}\" not found." | (logerr)
+		echo "Config file \"${vm_config_file}\" not found." | (logerr)
 		exit 1
 	fi
 
