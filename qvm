@@ -879,7 +879,7 @@ vm_list() {
 	if [ -z "${VMNAME}" ]; then
 		echo "Regular System VMs:"
 		if [ -d ${SYS_CONF_PATH} ]; then
-			for i in $(find ${SYS_CONF_PATH} -type f); do
+			for i in $(find ${SYS_CONF_PATH} -maxdepth 1 -type f); do
 				if [ -r "/${PID_DIR}/${i##*/}.qvm.pid" ]; then
 					echo "${i##*/} (PID: $(cat /${PID_DIR}/${i##*/}.qvm.pid))" | (loginfo)
 				else
@@ -905,7 +905,7 @@ vm_list() {
 		done
 		if [ -n "${USER_CONF_PATH}" ]; then
 			echo "User VMs:"
-			for i in $(find ${USER_CONF_PATH} -type f|sort); do
+			for i in $(find ${USER_CONF_PATH} -maxdepth 1 -type f|sort); do
 				if [ -e ${PID_DIR}/${i##*/}.qvm.pid ]; then
 					echo "${i##*/} (PID: $(cat ${PID_DIR}/${i##*/}.qvm.pid))" | (loginfo)
 				else
