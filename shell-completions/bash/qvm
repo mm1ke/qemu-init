@@ -51,44 +51,37 @@ function _qvm_comp_list(){
 	fi
 	[ -e ~/.config/qvm/qvm.conf ] && source ~/.config/qvm/qvm.conf
 
-	local _qvm_comp_cmd_update="
-memory       change vm memory
-sendkey      send key combinatin to vm
-vnc          change vnc password
-spice        change spice password
-toggle       toggle a qemu network interface"
-
 	local _qvm_comp_cmd_snapshot="
 create       create a new snapshot
 delete       delete existing snapshot
 list         list available snapshots
 load         load a specifig snapshot"
 
-	local _qvm_comp_cmd_hw="
-add          add a new PCI device
-remove       remove a PCI device
-list         list PCI devices added"
-
 	local _qvm_comp_cmd_connect="
 unix         connect via unix socket
 spicy        connect via spicy"
 
+	local _qvm_comp_cmd_manage="
+pause        pause/unpause guest emulation
+freeze       freezes/thaws virtual machine (via qemu guest agent)
+reboot       reboot virtual machine (via qemu guest agent)
+memory       change vm memory
+sendkey      send key combinatin to vm
+password     change password for spice or vnc
+toggle       toggle a qemu network interface"
+
 	local _qvm_comp_cmd_all="
 boot         boot virtual machine
-kill         kill virtual machine instantly
 stop         shutdown virtual machine
-reboot       reboot virtual machine (via qemu guest agent)
+kill         kill virtual machine instantly
 reset        resets virtual machine
-freeze       freezes/thaws virtual machine (via qemu guest agent)
-pause        pause/unpause guest emulation
 list         list all running/stopped virtual machines
-connect      connect to a virtual machine socket
-update       updates certain virtual machine settings
-network      add/removes tap interfaces on the host
-snapshot     create/delete/load/list available snapshots
-hw           add/remove/list pci devices"
+attach       connect via socket or spice
+config       add/remove devices (harddisk,network,usb)
+manage       manage settings (memory,vnc|spice password,etc)
+snapshot     create/delete/load/list snapshots"
 
- local _qvm_comp_cmd_parameters="
+	local _qvm_comp_cmd_parameters="
 readonly     start the vm in snapshot mode (changes wont be saved)
 pxeboot      start the vm and force booting from network
 fullscreen   start the vm in fullscreen mode
@@ -100,7 +93,6 @@ dryrun       don't boot the vm but print out the startparameters"
 	COMPREPLY=()
 	local cur=${COMP_WORDS[COMP_CWORD]}
 	local prev=${COMP_WORDS[COMP_CWORD-1]}
-
 	case ${COMP_CWORD} in
 		1)
 			__qvm_comp_with_text "${_qvm_comp_cmd_all}"
@@ -112,51 +104,73 @@ dryrun       don't boot the vm but print out the startparameters"
 						local _vms="$(find ${USER_CONF_PATH} -type f -printf '%f\n'|sort)"
 						__qvm_comp_with_text "$(find ${USER_CONF_PATH} -maxdepth 1 -type f -printf '%f\n'|sort)"
 					else
-
 						__qvm_comp_with_text "$(find /etc/init.d/kvm.* -type l -printf '%f\n'|cut -d'.' -f2-|sort)"
 					fi
 					;;
-				stop|s|reboot|r|reset|x|freeze|f|list|l|connect|c|update|u|snapshot|e|pause|p|hw|h|kill|k)
+				stop|s|reset|x|list|l|attach|a|snapshot|e|kill|k|manage|m)
 					COMPREPLY=($(compgen -W "$(find ${pid_dir} -name *.qvm.pid -printf '%f\n'|rev|cut -d'.' -f3-|rev)" -- ${cur}))
 					;;
-				network|n)
-					COMPREPLY=($(compgen -W "add del" -- ${cur}))
+				config|m)
+					COMPREPLY=($(compgen -W "$(find ${pid_dir} -name *.qvm.pid -printf '%f\n'|rev|cut -d'.' -f3-|rev) host" -- ${cur}))
 					;;
 			esac
 			;;
 		3)
-			case ${prev} in
-				add)
-					COMPREPLY=($(compgen -W "qtap0 qtap1 qtap2 qtap3" -- ${cur}))
-					;;
-				del)
-					COMPREPLY=($(compgen -W "$(find /sys/class/net/*/tun_flags | cut -d'/' -f5)" -- ${cur}))
-					;;
-			esac
 			case ${COMP_WORDS[COMP_CWORD-2]} in
 				boot|b)
 					__qvm_comp_with_text "${_qvm_comp_cmd_parameters}"
 					;;
-				update|u)
-					__qvm_comp_with_text "${_qvm_comp_cmd_update}"
+				manage|m)
+					__qvm_comp_with_text "${_qvm_comp_cmd_manage}"
 					;;
 				snapshot|e)
 					__qvm_comp_with_text "${_qvm_comp_cmd_snapshot}"
 					;;
-				hw|h)
-					__qvm_comp_with_text "${_qvm_comp_cmd_hw}"
-					;;
-				connect|c)
+				attach|a)
 					__qvm_comp_with_text "${_qvm_comp_cmd_connect}"
+					;;
+				config|u)
+					COMPREPLY=($(compgen -W "add remove" -- ${cur}))
 					;;
 			esac
 			;;
 		4)
-			_vm_pid="$(< ${pid_dir}/${COMP_WORDS[COMP_CWORD-2]}.qvm.pid)"
-			_vm_sock="${pid_dir}/${COMP_WORDS[COMP_CWORD-2]}.sock"
-			_vm_pciem="${pid_dir}/${COMP_WORDS[COMP_CWORD-2]}.pcie.map"
+			if [ -e "${pid_dir}/${COMP_WORDS[COMP_CWORD-2]}.qvm.pid" ]; then
+				_vm_pid="$(< ${pid_dir}/${COMP_WORDS[COMP_CWORD-2]}.qvm.pid)"
+				_vm_sock="${pid_dir}/${COMP_WORDS[COMP_CWORD-2]}.sock"
+				_vm_pciem="${pid_dir}/${COMP_WORDS[COMP_CWORD-2]}.pcie.map"
+			elif [ "${COMP_WORDS[COMP_CWORD-2]}" != "host" ]; then
+				echo "${COMP_WORDS[COMP_CWORD-2]} not a running vm"
+				return 0
+			fi
 
 			case ${prev} in
+				add)
+					case ${COMP_WORDS[COMP_CWORD-2]} in
+						# we can only add/remove network adapters (tap interface) to the host
+						host)
+							COMPREPLY=($(compgen -W "network" -- ${cur}))
+							;;
+						*)
+							COMPREPLY=($(compgen -W "network harddisk usb" -- ${cur}))
+							;;
+					esac
+					;;
+				remove)
+					case ${COMP_WORDS[COMP_CWORD-2]} in
+						host)
+							COMPREPLY=($(compgen -W "$(find /sys/class/net/*/tun_flags | cut -d'/' -f5)" -- ${cur}))
+							;;
+						*)
+							local _devices="$(
+								echo "info usb" | socat - unix-connect:${_vm_sock}|grep qvm|rev|cut -d' ' -f1|rev | tr '\r' -d | sed 's|.$||'
+								echo "info block" | socat - unix-connect:${_vm_sock}|grep ^qvm-block|cut -d' ' -f1 | tr '\r' -d
+								echo "info network" | socat - unix-connect:${_vm_sock}|grep ^qvm-net|cut -d':' -f1 | tr '\r' -d
+								)"
+							__qvm_comp_with_text "${_devices}"
+							;;
+					esac
+					;;
 				mem|memory)
 					COMPREPLY=($(compgen -W "1024 2048 4096 8192 16284 32768" -- ${cur}))
 					;;
@@ -167,11 +181,10 @@ dryrun       don't boot the vm but print out the startparameters"
 					local _tap_devices="$(cat /proc/${_vm_pid}/fdinfo/*|grep tap|cut -d':' -f2| tr -d '[:blank:]'|sort)"
 					local _network_info="$(echo "info network" | socat - unix-connect:${_vm_sock} | tail --lines=+2 | grep -v '^(qemu)' 2>&1)"
 					local _tap_macs=( $(echo ${_network_info} | grep -o -E '([[:xdigit:]]{1,2}:){5}[[:xdigit:]]{1,2}') )
-
 					local _id="0"
 					read -r -d '' _id_net <<- EOM
 					EOM
-					
+
 					for i in ${_tap_devices}; do
 						local master_bridge="$(cat /sys/class/net/${i}/master/uevent|grep INTERFACE|cut -d'=' -f 2)"
 						local _single_tap_mac="$(cat /sys/class/net/${i}/address)"
@@ -202,36 +215,30 @@ dryrun       don't boot the vm but print out the startparameters"
 					local snapshots="$(echo "info snapshots" | socat - unix-connect:${_vm_sock})"
 					COMPREPLY=($(compgen -W "$(echo "${snapshots}"|tail -n+5|head -n-1|tr -s \ '' | cut -d' ' -f2|tr '\n' ' ')" -- ${cur}))
 					;;
-				add)
-					COMPREPLY=($(compgen -W "harddisk network" -- ${cur}))
-					;;
-				remove)
-					local devices="$(
-						for x in $(cat ${_vm_pciem} \
-						| tr '|' '\n' \
-						| head -n -1 \
-						| nl -w1 -s'-' -b a);
-							# check if the second part of the string is empty (there is always a first part because of nl)
-							do if [ -n "$(echo $x| cut -d'-' -f2)" ]; then
-								echo $x;
-							fi;
-						done | tr '\n' ' '
-						)"
-					COMPREPLY=($(compgen -W "$(echo "${devices}")" -- ${cur}))
+				password)
+					COMPREPLY=($(compgen -W "spice vnc" -- ${cur}))
 					;;
 			esac
 			;;
 		5)
-			case ${prev} in
-				network)
-					COMPREPLY=($(compgen -W "$(grep -v -e '^$' -e '^#' /etc/qemu/bridge.conf | cut -d' ' -f2|sort -u)" -- ${cur}))
-					;;
-				harddisk)
-					if [ -n "${USER_IMG_PATH}" ]; then
-						#local _vms="$(find ${USER_CONF_PATH} -type f -printf '%f\n'|sort)"
-						__qvm_comp_with_text "$(find ${USER_IMG_PATH} -maxdepth 1 -type f -printf '%f\n'|sort)"
-					fi
-					;;
+			case ${COMP_WORDS[COMP_CWORD-2]} in
+				add)
+					case ${prev} in
+						network)
+							COMPREPLY=($(compgen -W "$(grep -v -e '^$' -e '^#' /etc/qemu/bridge.conf | cut -d' ' -f2|sort -u)" -- ${cur}))
+							;;
+						harddisk)
+							if [ -n "${USER_IMG_PATH}" ]; then
+								#local _vms="$(find ${USER_CONF_PATH} -type f -printf '%f\n'|sort)"
+								__qvm_comp_with_text "$(find ${USER_IMG_PATH} -maxdepth 1 -type f -printf '%f\n'|sort)"
+							fi
+							;;
+						usb)
+							# get a list of local connected usb devices and present it for passthrough
+							local _usbhost="$(echo "info usbhost" | socat - unix-connect:${_vm_sock} | grep -e Bus -e Class | awk '{$1=$1;print}'| tr -d '\r'|paste - - -d','|cut -d',' -f 1,2,6|sed 's|Bus ||;s| Addr ||;s|,|\t|2;s|\t| |')"
+							__qvm_comp_with_text "${_usbhost}"
+					esac
+				;;
 			esac
 			;;
 		*)
@@ -239,6 +246,7 @@ dryrun       don't boot the vm but print out the startparameters"
 			;;
 	esac
 	return 0
+
 }
 
 complete -F _qvm_comp_list qvm

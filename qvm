@@ -153,6 +153,43 @@ _check_remote_access_port(){
 	echo ${access_port}
 }
 
+# cleanup is only required if guest was killed or it was running as root user
+# usually qemu handles this by itself and would cleanup these files anyway
+__vm_cleanup() {
+	for f in "${VMQGASOCK}" "${VMQMPSOCK}" "${VMSOCK}" "${VMPID}" "${VMTPM2}"; do
+		if [ -e "${f}" ]; then
+			rm "${f}"
+		fi
+	done
+}
+
+# cleanup of network interfaces is always required
+__vm_cleanup_net() {
+	# cleanup network interfaces
+	if [ -e "${VMNET}" ]; then
+		if ${TAP_DELETE}; then
+			delete_network "$(< ${VMNET})"
+			rm "${VMNET}"
+		else
+			rm "${VMNET}"
+		fi
+	fi
+}
+
+_create_tpm2() {
+	TPM2_CMD="${SWTPM} socket -d --tpm2 --tpmstate dir=${PID_DIR} --ctrl type=unixio,path=${VMTPM2} -r ${VM_USER}"
+	# to create tpm2 we need to run the commands as root
+	echo "Creating TPM2 interface for ${VMNAME}" | (loginfo)
+	if ${ROOT_ENABLED}; then
+		/bin/sh -c "${TPM2_CMD}"
+	else
+		if ! $(su -l root -c "${TPM2_CMD}"); then
+			echo "Error creating network interfaces" | (logerr)
+			exit 1
+		fi
+	fi
+}
+
 _cfg_network_check(){
 	# network checks/default settings
 	declare -a _tmp_vm_interfaces=("${VM_NETWORK}" "${VM_NETWORK0}" "${VM_NETWORK1}" "${VM_NETWORK2}" "${VM_NETWORK3}" \
@@ -768,12 +805,11 @@ EOM
 		config_gen "-tpmdev emulator,id=${VMNAME}-tpm0,chardev=${VMNAME}-chrtpm"
 		config_gen "-device tpm-tis,tpmdev=${VMNAME}-tpm0"
 	fi
-
 	# enable pcie port
 	local _pcie_ports="${VM_PCIE_PORTS:-0}"
 	[ ${_pcie_ports} -gt 0 ] && config_gen "" "Enable PCIE Ports"
 	while [ ${_pcie_ports} -gt 0 ]; do
-		config_gen "-device pcie-root-port,id=pcie-${_pcie_ports},slot=${_pcie_ports}"
+		config_gen "-device pcie-root-port,id=qvm-pcie-${_pcie_ports},slot=${_pcie_ports}"
 		_pcie_ports=$(expr ${_pcie_ports} - 1)
 	done
 	# enable (multiple) usb redir devices
@@ -781,7 +817,7 @@ EOM
 	[ ${_usb_redir} -gt 0 ] && config_gen "" "Enable USB Redir Ports"
 	while [ ${_usb_redir} -gt 0 ]; do
 		config_gen "-chardev spicevmc,name=usbredir,id=usbredirchardev_${_usb_redir}"
-		config_gen "-device usb-redir,chardev=usbredirchardev_${_usb_redir},id=usbredirdev_${_usb_redir},debug=3"
+		config_gen "-device usb-redir,chardev=usbredirchardev_${_usb_redir},id=qvm-redir-${_usb_redir},debug=3"
 		_usb_redir=$(expr ${_usb_redir} - 1)
 	done
 
@@ -954,59 +990,29 @@ vm_list() {
 				local _single_tap_mac="$(cat /sys/class/net/${i}/address)"
 				local _qemu_bridge="$(echo "${_network_info}" | grep ${_tap_macs[${_id}]} -A1 | grep br= | cut -d'=' -f5|tr '\r' -d)"
 				local _qemu_interface_name="$(echo "${_network_info}"|grep ${_tap_macs[${_id}]}|cut -d':' -f1)"
-				if [ -e "${PID_DIR}/${VMNAME}-${_qemu_interface_name}" ]; then
-					echo " \ DOWN ${i}(${_single_tap_mac}) --> ${master_bridge} ("${_qemu_bridge:0:-1}") <-- ${_qemu_interface_name}(${_tap_macs[${_id}]})" | (logerr)
+				if [ -e "${PID_DIR}/${VMNAME}-net_state-${_qemu_interface_name}" ]; then
+					echo "    \ DOWN ${i}(${_single_tap_mac}) --> ${master_bridge} ("${_qemu_bridge:0:-1}") <-- ${_qemu_interface_name}(${_tap_macs[${_id}]})"
 				else
-					echo " \ UP ${i}(${_single_tap_mac}) --> ${master_bridge} ("${_qemu_bridge:0:-1}") <-- ${_qemu_interface_name}(${_tap_macs[${_id}]})" | (loginfo)
+					echo "    \ UP ${i}(${_single_tap_mac}) --> ${master_bridge} ("${_qemu_bridge:0:-1}") <-- ${_qemu_interface_name}(${_tap_macs[${_id}]})"
 				fi
 					_id=$(expr ${_id} + 1)
 			done
+
+
+			echo "Connected Block Devices (Harddisks):" | (loginfo)
+			echo "info block" | socat - unix-connect:${VMSOCK}|grep ^qvm-block|cut -d' ' -f1 | tr '\r' -d  | sed 's|^|    |'
+			echo "Connected Network Devices:" | (loginfo)
+			echo "info network" | socat - unix-connect:${VMSOCK}|grep ^qvm-net|cut -d':' -f1 | tr '\r' -d  | sed 's|^|    |'
+			echo "Connected USB devices:" | (loginfo)
+			echo "info usb" | socat - unix-connect:${VMSOCK}|grep qvm-usb|rev|cut -d' ' -f1|rev | tr '\r' -d | sed 's|.$||;s|^|    |'
+			echo "USB Redirection Ports:" | (loginfo)
+			echo "info usb" | socat - unix-connect:${VMSOCK}|grep qvm-redir|rev|cut -d' ' -f1|rev | tr '\r' -d | sed 's|.$||;s|^|    |'
+			echo
+			echo "Listing available snapshots of ${VMNAME}" | (loginfo)
+			_vm_edit_snapshot_output "info snapshots"
+			
 		fi
 	fi
-}
-
-vm_update() {
-	local _setting="${1}"
-	local _value="${2}"
-
-	if [ -z "${VMNAME}" ] || [ -z "${_setting}" ] || [ -z "${_value}" ]; then
-		echo "missing var: please make sure you passed [vmname] [setting] [value]. see: qvm help" | (logerr)
-		exit 1
-	fi
-
-	_check_running_vm
-
-	case ${_setting} in
-		mem|memory)
-			echo "Changing Memory to ${_value}MB for ${VMNAME}" | (loginfo)
-			_vm_edit balloon ${_value}
-			;;
-		key|sendkey)
-			echo "Sending key combination: ${_value}" | (loginfo)
-			_vm_edit sendkey ${_value}
-			;;
-		vnc)
-			echo "Changing VNC password to ${_value}" | (loginfo)
-			_vm_edit "set_password vnc" ${_value}
-			;;
-		spice)
-			echo "Changing SPICE password to ${_value}" | (loginfo)
-			_vm_edit "set_password spice" ${_value}
-			;;
-		toggle)
-			local _net_state="${PID_DIR}/${VMNAME}-net_state-${_value}"
-
-			if [ -e "${_net_state}" ]; then
-				echo "Enabling Network interface ${_value}" | (loginfo)
-				_vm_edit "set_link ${_value} on"
-				rm "${_net_state}"
-			else
-				echo "Disabling Network interface ${_value}" | (loginfo)
-				_vm_edit "set_link ${_value} off"
-				touch "${_net_state}"
-			fi
-			;;
-		esac
 }
 
 vm_snapshot() {
@@ -1054,67 +1060,66 @@ vm_snapshot() {
 	esac
 }
 
-vm_hw(){
-	local _setting="${1}" # add | remove | list
-	local _type="${2}" # type network|harddisk
-	local _value1="${3}" # value 1
+vm_config(){
+	local _command="${1}"			# add|remove
+	local _category="${2}"		# network|harddisk|usb
+	local _value1="${3}"			# value 1
+#	local _value2="${4}"			# value 2
 
-	if [ -z "${VMNAME}" ] || [ -z "${_setting}" ]; then
-		echo "missing var: please make sure you passed [vmname], [setting]. see: qvm help" | (logerr)
-		exit 1
-	fi
+	_check_pci_ports(){
 
-	_check_running_vm
+		local _id=0
+		# list available pci ports
+		local _available_pcie_ports="$(echo "info pci" | socat - unix-connect:${VMSOCK}|grep qvm-pcie|cut -d'"' -f2|rev|cut -c1-1)"
+		# list used pci ports (qvm-[b,n] list only qvm-block.. and qvm-net.. devices)
+		local _used_pcie_ports="$(echo "info pci" | socat - unix-connect:${VMSOCK}|grep qvm-[b,n]|cut -d'"' -f2|rev|cut -c1-1)"
 
-	if ! [ -e "${VMPCIM}" ]; then
-		echo "You need to enable PCIE root bus. Check config" | (logerr)
-		exit 1
-	else
-		local _pcie_ports_count="$(tr -d -c '|\n' < "${VMPCIM}" | awk '{ print length; }')"
-	fi
-
-	case ${_setting} in
-		list)
-			local _id="${_pcie_ports_count}"
-			while [ ${_id} -gt 0 ]; do
-				if [ -n "$(cut -d'|' -f${_id} "${VMPCIM}")" ]; then
-					echo "PCIE ID ${_id}: $(cut -d'|' -f${_id} "${VMPCIM}")" | (loginfo)
-				fi
-				_id=$(expr ${_id} - 1)
-			done
-			;;
-		add)
-			local _id="${_pcie_ports_count}"
-			while [ ${_id} -gt 0 ]; do
-				if [ -z "$(cut -d'|' -f${_id} "${VMPCIM}")" ]; then
-					local _free_port="${_id}"
-					break
-				fi
-				_id=$(expr ${_id} - 1)
-			done
-			if [ "${_id}" = "0" ]; then
-				echo "Error: No free PCI ports available. Add more or remove others" | (logerr)
-				exit 1
+		# check which port is available
+		for _port in ${_available_pcie_ports}; do
+			if ! echo ${_used_pcie_ports}|grep -q ${_port}; then
+				_id=${_port}
+				break
 			fi
-			case ${_type} in
+		done
+		
+		if [ "${_id}" = "0" ]; then
+			echo "No free PCI ports available. Add more or remove others" | (logwarn)
+		fi
+		echo ${_id}
+	}
+
+	case ${_command} in
+		add)
+			case ${_category} in
 				network)
-					echo "adding additional PCI network device"
-					if [ -z "${_value1}" ]; then
-						echo "Error: Need bridge interface" | (logerr)
-						exit 1
+					if [ "${VMNAME}" == "host" ]; then
+						create_network "${_value1}"
+					else
+						_check_running_vm
+						local _id=$(_check_pci_ports)
+						[ -z "${_value1}" ] && { echo "Error: Need bridge interface name" | (logerr) ; exit 1; }
+						[ "${_id}" == "0" ] && exit 1
+
+						local _devid="qvm-net-${_value1}-${_id}"
+						echo "adding additional PCI network device on ${_value1}. ID: ${_devid}" | (loginfo)
+
+						#value1=bridge interface
+						_vm_edit netdev_add "bridge,br=${_value1},id=${_devid}-nd"
+						_vm_edit device_add "virtio-net-pci,netdev=${_devid}-nd,bus=qvm-pcie-${_id},id=${_devid}"
 					fi
-					#value1=bridge interface
-					_vm_edit netdev_add "bridge,br=${_value1},id=net${_id}"
-					_vm_edit device_add "virtio-net-pci,netdev=net${_id},bus=pcie-${_id},id=net-${_id}"
-					awk -v "id=${_id}" -v "var=virtio-net-pci,${_value1}" -i inplace 'BEGIN{FS=OFS="|"} {if (NR==1) {$id = var }; print}' ${VMPCIM}
 					;;
+
 				harddisk)
-					echo "adding additional PCI harddisk (${_value1})" | (loginfo)
+					_check_running_vm
+					local _id=$(_check_pci_ports)
+
+					[ -z "${_value1}" ] && { echo "Error: Need path to valid harddisk" | (logerr) ; exit 1; }
+					[ "${_id}" == "0" ] && exit 1
 					local _format="${_value1##*.}"
-					if [ -z ${_value1} ]; then
-						echo "Error: You need to provide a harddisk file."
-						exit 1
-					fi
+
+					#value1=file
+					local _devid="qvm-block-${_id}"
+					echo "adding additional PCI harddisk (${_value1}) ID: ${_devid}" | (loginfo)
 					if ! [ -f ${_value1} ]; then
 						if ! [ -f ${USER_IMG_PATH}/${_value1} ]; then
 							echo "Error: ${USER_IMG_PATH}/${_value1} is not a regular file" | (logerr)
@@ -1123,70 +1128,124 @@ vm_hw(){
 							_value1="${USER_IMG_PATH}/${_value1}"
 						fi
 					fi
-					#value1=file
-					_vm_edit "drive_add 0" "if=none,file=${_value1},format=${_format},id=disk${_id}"
-					_vm_edit device_add "virtio-blk-pci,drive=disk${_id},bus=pcie-${_id},id=disk-${_id}"
-					awk -v "id=${_id}" -v "var=virtio-blk-pci,${_value1}" -i inplace 'BEGIN{FS=OFS="|"} {if (NR==1) {$id = var }; print}' ${VMPCIM}
+					# https://blog.chrishowie.com/2019/09/19/hot-swapping-virtio-disks-on-qemu/
+					_vm_edit "drive_add 0" "if=none,file=${_value1},format=${_format},id=${_devid}"
+					_vm_edit device_add "virtio-blk-pci,drive=${_devid},bus=qvm-pcie-${_id},id=${_devid}-bd-${_id}"
 					;;
+
+				usb)
+					_check_running_vm
+					#value1=usbbus,hostaddr
+					local _bus="${_value1%%,*}"
+					local _addr="${_value1##*,}"
+					if [ -z "${_bus}" ] || [ -z "${_addr}" ]; then
+						echo "Error: USB bus and addr required" | (logerr)
+						exit 1
+					fi
+
+					local _devid="qvm-usb-${_bus}-${_addr}"
+					echo "adding host usb device (Host-Bus:${_bus},Host-Addr:${_addr}). ID: ${_devid}" | (loginfo)
+					_vm_edit device_add "usb-host,hostbus=${_bus},hostaddr=${_addr},id=${_devid}"
+					;;
+				*) echo "unknow type: ${_type}. see: qvm help" | (logerr) ; exit 1 ;;
 			esac
-			;;
+		;;
+
 		remove)
-			local _dev="$(cut -d'|' -f${_type:0:1} ${VMPCIM} | cut -d ',' -f1)"
-			if [ -z "${_dev}" ]; then
-				echo "${_type}: doesn't exist: Nothing was removed" | (logwarn)
+			# _categroy == value (for example pci-4-virtio-net-pci,brdmz or tap1)
+			if [ "${VMNAME}" == "host" ]; then
+				delete_network "${_category}"
 			else
-				echo "Removing device ${_type}" | (loginfo)
-				case ${_dev} in
-					virtio-net-pci)
-						_vm_edit device_del net-${_type:0:1}
-						_vm_edit netdev_del net${_type:0:1}
+				#local _hw_type=${_category:0:3}
+				local _hw_type="$(echo ${_category}|cut -d'-' -f2)"
+				local _string=${_category:4}
+				case ${_hw_type} in
+					net)
+						_vm_edit device_del ${_category}
+						_vm_edit netdev_del ${_category}-nd
 						;;
-					virtio-blk-pci)
-						_vm_edit device_del disk-${_type:0:1}
+					block)
+						_vm_edit device_del ${_category}-bd-${_category: -1}
+						;;
+					*)
+						_vm_edit device_del ${_category}
 						;;
 				esac
 			fi
-			# _type is her the ID
-			awk -v "id=${_type:0:1}" -i inplace 'BEGIN{FS=OFS="|"} {if (NR==1) {$id = "" }; print}' ${VMPCIM}
 			;;
+		*) echo "missing command: please make sure you passed [setting]. see: qvm help" | (logerr) ; exit 1 ;;
 	esac
 }
 
-host_network(){
-	local _function="${1}"
-	local _name="${2}"
-	local _bridge="${3}"
+vm_manage(){
+	local _command="${1}"			# pause|freeze|reboot|memory|sendkey|toggle|password
+	local _value="${2}"				# value for memory|sendkey|toggle|password
+	
+	_check_running_vm
 
-	case ${_function} in
-		add)
-			if [ -z "${_name}" ] || [ -z "${_bridge}" ]; then
-				echo "missing var: please make sure you passed name and bridge. see: qvm help" | (logerr)
-				exit 1
+	case ${_command} in
+		pause)
+			local vm_status="$(echo "info status" | ${SOCAT} - unix-connect:${VMSOCK})"
+			vm_status="$(echo "${vm_status}"|tail -n+3|head -n-1|cut -d' ' -f3)"
+
+			if $(echo "${vm_status}"|grep -q "running"); then
+				echo "stopping emulation"
+				echo "s" | ${SOCAT} - unix-connect:${VMSOCK} > /dev/null 2>&1
+			elif $(echo "${vm_status}"|grep -q "paused"); then
+				echo "resume emulation"
+				echo "c" | ${SOCAT} - unix-connect:${VMSOCK} > /dev/null 2>&1
+			else
+				echo "Unknow system status: ${vm_status}" | (logwarn)
 			fi
-			create_network "${3},${2}"
 			;;
-		del)
-			if [ -z "${_name}" ]; then
-				echo "missing var: please make sure you passed name. see: qvm help" | (logerr)
-				exit 1
+		freeze)
+			if _check_qga; then
+				local freeze_status="$(${QGA} --address=${VMQGASOCK} fsfreeze status)"
+				if [ "${freeze_status}" = "thawed" ]; then
+					echo "Freezing the filesystem" | (loginfo)
+					${QGA} --address=${VMQGASOCK} fsfreeze freeze
+				elif [ "${freeze_status}" = "frozen" ]; then
+					echo "Thawing the filesystem" | (loginfo)
+					${QGA} --address=${VMQGASOCK} fsfreeze thaw
+				else
+					echo "Error thawing/freezeing filesystem" | (logwarn)
+				fi
 			fi
-			delete_network "${2}"
 			;;
+		reboot)
+			echo "Rebooting ${VMNAME}" | (loginfo)
+			_check_qga && ${QGA} --address=${VMQGASOCK} reboot
+			;;
+		mem|memory)
+			echo "Changing Memory to ${_value}MB for ${VMNAME}" | (loginfo)
+			_vm_edit balloon ${_value}
+			;;
+		key|sendkey)
+			echo "Sending key combination: ${_value}" | (loginfo)
+			_vm_edit sendkey ${_value}
+			;;
+		vnc)
+			echo "Changing VNC password to ${_value}" | (loginfo)
+			_vm_edit "set_password vnc" ${_value}
+			;;
+		spice)
+			echo "Changing SPICE password to ${_value}" | (loginfo)
+			_vm_edit "set_password spice" ${_value}
+			;;
+		toggle)
+			local _net_state="${PID_DIR}/${VMNAME}-net_state-${_value}"
+			if [ -e "${_net_state}" ]; then
+				echo "Enabling Network interface ${_value}" | (loginfo)
+				_vm_edit "set_link ${_value} on"
+				rm "${_net_state}"
+			else
+				echo "Disabling Network interface ${_value}" | (loginfo)
+				_vm_edit "set_link ${_value} off"
+				touch "${_net_state}"
+			fi
+			;;
+		*) echo "command ${_command}: unknow command" | (logerr); exit 1 ;;
 	esac
-}
-
-create_tpm2() {
-	TPM2_CMD="${SWTPM} socket -d --tpm2 --tpmstate dir=${PID_DIR} --ctrl type=unixio,path=${VMTPM2} -r ${VM_USER}"
-	# to create tpm2 we need to run the commands as root
-	echo "Creating TPM2 interface for ${VMNAME}" | (loginfo)
-	if ${ROOT_ENABLED}; then
-		/bin/sh -c "${TPM2_CMD}"
-	else
-		if ! $(su -l root -c "${TPM2_CMD}"); then
-			echo "Error creating network interfaces" | (logerr)
-			exit 1
-		fi
-	fi
 }
 
 create_network() {
@@ -1204,12 +1263,20 @@ create_network() {
 	_host_toggle_disable_ipv6
 
 	for singleint in ${allint}; do
-		local _type="${singleint%%,*}"
-		local _name="${singleint##*,}"
+		local _type="${singleint%%,*}" # bridge interface (must exist)
+		local _name="${singleint##*,}" # tap interface name
 
-		if [ -z "${_type}" ] || [ -z "${_name}" ]; then
-			echo "Missing variable: please make sure you passed type,name. see: qvm help" | (logerr)
-			exit 1
+		if [ "${_type}" == "${_name}" ]; then
+			local _random_qtap="$(pwgen -A 5 1)"
+			while [ -f /sys/class/net/qtap-${_random_qtap}/tun_flags ]; do
+				_random_qtap=$(pwgen -A 5 1)
+			done
+			echo "No tap interface name given, using random: \"${_random_qtap}\""
+			_name="${_random_qtap}"
+		fi
+
+		if [ -f /sys/class/net/${_name}/tun_flags ]; then
+			echo "\"${_name}\" already used. ${DEFAULT_MSG}" | (logerr)
 		fi
 
 		echo "Creating interface \"${_name}\" on bridge \"${_type}\" ..." | (loginfo)
@@ -1293,13 +1360,6 @@ delete_network() {
 	fi
 }
 
-vm_reboot(){
-	_check_running_vm
-
-	echo "Rebooting ${VMNAME}"
-	_check_qga && ${QGA} --address=${VMQGASOCK} reboot
-}
-
 vm_reset(){
 	_check_running_vm
 
@@ -1331,40 +1391,6 @@ vm_connect(){
 		*)
 			echo "Please choose how to connect to the vm. (unix socket or spicy)"
 	esac
-}
-
-vm_freeze_thaw(){
-	_check_running_vm
-
-	if _check_qga; then
-		local freeze_status="$(${QGA} --address=${VMQGASOCK} fsfreeze status)"
-		if [ "${freeze_status}" = "thawed" ]; then
-			echo "Freezing the filesystem"
-			${QGA} --address=${VMQGASOCK} fsfreeze freeze
-		elif [ "${freeze_status}" = "frozen" ]; then
-			echo "Thawing the filesystem"
-			${QGA} --address=${VMQGASOCK} fsfreeze thaw
-		else
-			echo "Error thawing/freezeing filesystem"
-		fi
-	fi
-}
-
-vm_pause(){
-	_check_running_vm
-
-	local vm_status="$(echo "info status" | ${SOCAT} - unix-connect:${VMSOCK})"
-	vm_status="$(echo "${vm_status}"|tail -n+3|head -n-1|cut -d' ' -f3)"
-
-	if $(echo "${vm_status}"|grep -q "running"); then
-		echo "stopping emulation"
-		echo "s" | ${SOCAT} - unix-connect:${VMSOCK} > /dev/null 2>&1
-	elif $(echo "${vm_status}"|grep -q "paused"); then
-		echo "resume emulation"
-		echo "c" | ${SOCAT} - unix-connect:${VMSOCK} > /dev/null 2>&1
-	else
-		echo "Unknow system status: ${vm_status}" | (logwarn)
-	fi
 }
 
 vm_start(){
@@ -1483,13 +1509,6 @@ vm_start(){
 			nohup ${VFSD} ${vfsd} >/dev/null 2>&1 &
 		done
 
-		# create empty pciemap file
-		local _pcie_ports="${VM_PCIE_PORTS:-0}"
-		while [ ${_pcie_ports:-0} -gt 0 ]; do
-			echo -n "|" >> ${VMPCIM}
-			_pcie_ports=$(expr ${_pcie_ports} - 1)
-		done
-
 		# create network interfaces
 		if [ -n "${NET_INT}" ]; then
 			create_network "${NET_INT[@]}"
@@ -1497,7 +1516,7 @@ vm_start(){
 
 		# create tpm2 interface if required
 		if [ -n "${VM_ENABLE_TPM2}" ]; then
-			create_tpm2
+			_create_tpm2
 		fi
 
 		if [ -n "${VM_START_MESSAGE}" ]; then
@@ -1535,34 +1554,6 @@ vm_start(){
 			nohup ${SPICY} -h ${spice_ip} -p ${spice_port} &>/dev/null &disown
 		fi
 
-	fi
-}
-
-# cleanup is only required if guest was killed or it was running as root user
-# usually qemu handles this by itself and would cleanup these files anyway
-__vm_cleanup(){
-	for f in "${VMQGASOCK}" "${VMQMPSOCK}" "${VMSOCK}" "${VMPID}" "${VMPCIM}" "${VMTPM2}"; do
-		if [ -e "${f}" ]; then
-			rm "${f}"
-		fi
-	done
-}
-
-# cleanup of network interfaces is always required
-__vm_cleanup_net(){
-	# cleanup network interfaces
-	if [ -e "${VMNET}" ]; then
-		if ${TAP_DELETE}; then
-			delete_network "$(< ${VMNET})"
-			rm "${VMNET}"
-		else
-			rm "${VMNET}"
-		fi
-	fi
-
-	# remove pcie.map
-	if [ -e "${VMPCIM}" ]; then
-			rm "${VMPCIM}"
 	fi
 }
 
@@ -1647,34 +1638,30 @@ usage() {
 	echo -e "start,stop and manipulating qemu vms"
 	echo
 	echo -e "guest start/stopping"
-	echo -e "qvm b|k|s|r|x|f|l|p [vmname] [boot-options]"
+	echo -e "qvm a|b|k|s|r|x|f|l|p [vmname] [boot-options]"
+	echo -e " a|attach\t\tconnect to a virtual machine"
+	echo -e "  connect via unix or spicy"
 	echo -e " b|boot\t\t\tboot virtual machine config file"
 	echo -e "  boot-options are: dryrun|fullscreen|nodisplay|nonet|pxeboot|readonly|spicy"
 	echo -e " k|kill\t\t\tkill virtual machine PID"
 	echo -e " s|stop\t\t\tstop virtual machine"
 	echo -e " x|reset\t\treset virtual machine"
-	echo -e " r|reboot\t\trestart virtual machine (via qemu guest agent)"
-	echo -e " f|freeze\t\tfreeze|unfreeze guest filesystem (via qemu guest agent)"
 	echo -e " l|list\t\t\tlist all virtual machines|show details of [vmname]"
-	echo -e " p|pause\t\tpause/unpause qemu virtualization"
 	echo
-	echo -e "vm/guest connecting"
-	echo -e "qvm connect [vmname] unix|spicy"
-	echo -e " unix\t\t\tconnect to [vmname] via unix socket"
-	echo -e " spicy\t\t\tconnect to [vmname] via spicy (if available)"
-	echo
-	echo -e "vm/guest modify"
-	echo -e "qvm update [vmname] memory|sendkey|spice|vnc|toggle value"
+	echo -e "vm/guest manage"
+	echo -e "qvm manage [vmname] reboot|freeze|pause|memory|sendkey|spice|vnc|toggle value"
 	echo -e " memory 4096\t\tchange the memory of [vmname] via ballooing"
 	echo -e " sendkey ctrl-alt-f1\tsend key combination to [vmname] (like ctrl-alt-f1)"
 	echo -e " vnc|spice P4ssw0rd\tchange vnc or spice password of [vmname]"
 	echo -e " toggle qemu interface\ttoggle a qemu network interface in [vmname]"
+	echo -e " reboot\t\treboot the vm (via guest-agent)"
+	echo -e " freeze\t\tfreeze/thaw the vm (via guest-agent)"
+	echo -e " pause\t\tstop/resume emulation"
 	echo
-	echo -e "vm/guest add/remove virtual hardware"
-	echo -e "qvm hw [vmname] add|remove|list [network|harddisk] [value]"
+	echo -e "vm/guest config"
+	echo -e "qvm config [host|vmname] add|remove [network|harddisk|usb] [value]"
 	echo -e " add [value]\t\tadd a pci [network|harddisk] device to the guest"
 	echo -e " remove [value]\t\tremove a pci device from the guest"
-	echo -e " list\t\t\tlist added pci devices of the guest"
 	echo
 	echo -e "vm/guest snapshoting"
 	echo -e "qvm snapshot [vmname] create|delete|info|load [value]"
@@ -1682,11 +1669,6 @@ usage() {
 	echo -e " delete [value]\t\tdelete snapshot [value]"
 	echo -e " snapshot list\t\tlist available snapshots"
 	echo -e " load [value]\t\tload snapshot [value]"
-	echo
-	echo -e "host network"
-	echo -e "qvm network add|del tap-name,[bridge-dev(br0)]"
-	echo -e " add\t\t\tcreate a new tap device and link it to [bridge-dev]"
-	echo -e " del\t\t\tremove a tap device"
 }
 
 # set the default parameters for a given vm
@@ -1704,7 +1686,6 @@ qvm_var_setup() {
 	VMQMPSOCK="${PID_DIR}/${vm}.qmp.sock"
 	# vm files
 	VMNET="${PID_DIR}/${vm}.net"
-	VMPCIM="${PID_DIR}/${vm}.pcie.map"
 	# the final pid name contain the share name too
 	VMVFSDPID="${PID_DIR}/${vm}-vfsd-"
 	# TPM2 socket name
@@ -1727,17 +1708,12 @@ else
 		b|boot) qvm_var_setup ${2} ; vm_start "${3}" ;;
 		s|stop) qvm_var_setup ${2} ; vm_stop ;;
 		k|kill) qvm_var_setup ${2} ; vm_kill ;;
-		r|reboot) qvm_var_setup ${2} ; vm_reboot ;;
 		x|reset) qvm_var_setup ${2} ; vm_reset ;;
-		f|freeze) qvm_var_setup ${2} ; vm_freeze_thaw ;;
-		p|pause) qvm_var_setup ${2} ; vm_pause ;;
-		u|update) qvm_var_setup ${2} ; vm_update "${3}" "${4}" ;;
-		c|connect) qvm_var_setup ${2} ; vm_connect ${3};;
+		a|attach) qvm_var_setup ${2} ; vm_connect ${3};;
 		l|list) qvm_var_setup ${2} ; vm_list "${2}" ;;
 		e|snapshot) qvm_var_setup ${2} ; vm_snapshot "${3}" "${4}" ;;
-		h|hw) qvm_var_setup ${2} ; vm_hw "${3}" "${4}" "${5}" ;;
-		# host command
-		n|network) host_network "${2}" "${3}" "${4}" ;;
+		c|config) [ ${2} != "host" ] && qvm_var_setup ${2} || VMNAME="host" ; vm_config "${3}" "${4}" "${5}" ;;
+		m|manage) qvm_var_setup ${2} ; vm_manage "${3}" "${4}" ;;
 		*) echo "Unknown command"; exit 1 ;;
 	esac
 fi
